@@ -5,12 +5,15 @@ Cloudflare, avec la santé de chaque cible et des alertes Telegram. Installé
 depuis le Hub, il ajoute au Hub la page **Connexions** et publie seul chaque
 service que le Hub installe.
 
-Deux conteneurs :
+Trois conteneurs :
 
 - **relay-caddy** — le trafic (ports 80 et 443). Le binaire officiel de Caddy,
   vérifié par son empreinte, seul sur une image vide, sans root ni capacité.
   Son API d'administration n'écoute que sur un socket Unix, dans un volume que
   seul Relay partage avec lui.
+- **relay-dns** — dnsmasq : tous les noms de la zone locale (`home.arpa`)
+  mènent à cette machine, le reste est transmis. Sur un Mac, un fichier
+  `/etc/resolver/home.arpa` contenant `nameserver <IP de la machine>` suffit.
 - **relay** — les routes, l'interface et l'API. Node sans dépendance, sur le
   socle commun (comptes, clés d'accès, TOTP, journal, coffre).
 
@@ -57,6 +60,7 @@ republier depuis le Hub : Relay 2 ne monte plus le socket Docker.
 | Variable | Défaut | |
 |---|---|---|
 | `RELAY_IP` | — | adresse de la machine sur le réseau local |
+| `RELAY_ZONE` | `home.arpa` | zone dont tous les noms mènent ici |
 | `RELAY_HUB_TOKEN` | — | jeton du Hub (généré par le Hub) |
 | `RELAY_CADDY_SOCKET` | `/run/caddy/admin.sock` | API d'administration de Caddy |
 | `RELAY_CADDY_SERVICE` | `http://relay-caddy:80` | Caddy vu par cloudflared |

@@ -20,6 +20,20 @@ services:
     security_opt: ["no-new-privileges:true"]
     networks: [relay]
 
+  dns:
+    build: { context: ., target: dns }
+    image: ghcr.io/codexx64/relay-dns:2.0.0
+    container_name: relay-dns
+    restart: unless-stopped
+    command: ["--address=/${RELAY_ZONE:-home.arpa}/${RELAY_IP:?RELAY_IP est requis}"]
+    ports: ["${RELAY_IP:?RELAY_IP est requis}:53:53/udp", "${RELAY_IP:?RELAY_IP est requis}:53:53/tcp"]
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "53"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [relay]
+
   relay:
     build: { context: ., target: relay }
     image: ghcr.io/codexx64/relay:2.0.0

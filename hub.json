@@ -85,6 +85,14 @@
       "help": "0.0.0.0 : toutes les interfaces. Une adresse précise pour n'écouter que sur elle."
     },
     {
+      "key": "RELAY_ZONE",
+      "label": "Zone locale",
+      "type": "string",
+      "default": "home.arpa",
+      "advanced": true,
+      "help": "Tous les noms de cette zone mènent à cette machine (résolveur de Relay, port 53). home.arpa est réservé aux réseaux domestiques."
+    },
+    {
       "key": "ACME_EMAIL",
       "label": "Adresse pour Let's Encrypt",
       "type": "string",

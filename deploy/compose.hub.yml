@@ -1,8 +1,8 @@
 # Relay installé par le Hub : Caddy (le trafic, ports 80 et 443 de la
-# machine) et Relay (les routes, l'interface, l'API du Hub). Les {{...}} sont
-# remplacés à l'installation : secrets générés, port d'hôte de l'interface,
-# volumes nommés et réseau partagé du Hub, où Caddy joint chaque service par
-# son nom de conteneur.
+# machine), un résolveur pour la zone locale (port 53) et Relay (les routes,
+# l'interface, l'API du Hub). Les {{...}} sont remplacés à l'installation :
+# secrets générés, port d'hôte de l'interface, volumes nommés et réseau
+# partagé du Hub, où Caddy joint chaque service par son nom de conteneur.
 services:
   caddy:
     image: ghcr.io/codexx64/relay-caddy:{{config.IMAGE_TAG}}
@@ -36,6 +36,32 @@ services:
       options:
         max-size: "10m"
         max-file: "5"
+
+  # Les noms de la zone locale (home.arpa) mènent à cette machine, le reste
+  # est transmis. Il n'écoute que sur l'adresse de la machine : pose-le comme
+  # DNS de la zone sur tes postes (/etc/resolver sur Mac) ou sur la box.
+  dns:
+    image: ghcr.io/codexx64/relay-dns:{{config.IMAGE_TAG}}
+    container_name: {{service.host}}-dns
+    restart: unless-stopped
+    networks: [hub]
+    command: ["--address=/{{config.RELAY_ZONE}}/{{config.RELAY_IP}}"]
+    ports:
+      - "{{config.RELAY_IP}}:53:53/udp"
+      - "{{config.RELAY_IP}}:53:53/tcp"
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "53"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 64m
+    cpus: 0.25
+    pids_limit: 32
+    logging:
+      driver: json-file
+      options:
+        max-size: "5m"
+        max-file: "3"
 
   relay:
     image: ghcr.io/codexx64/relay:{{config.IMAGE_TAG}}

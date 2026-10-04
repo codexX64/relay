@@ -1,9 +1,10 @@
 # syntax=docker/dockerfile:1
-# Relay 2 : deux images, construites d'ici.
+# Relay 2 : trois images, construites d'ici.
 #   relay        : Node seul, aucune dépendance d'exécution (node:sqlite et
 #                  Argon2id sont dans le moteur) ;
 #   relay-caddy  : Caddy, binaire officiel vérifié par son empreinte SHA-512,
-#                  posé seul sur une image vide, sans shell ni utilisateur root.
+#                  posé seul sur une image vide, sans shell ni utilisateur root ;
+#   relay-dns    : dnsmasq, pour que les noms de la zone locale mènent ici.
 # Image de base épinglée par empreinte (index multi-architecture amd64 +
 # arm64) : une étiquette peut être déplacée, une empreinte non.
 ARG NODE_IMAGE=node:24.21.0-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
@@ -33,6 +34,15 @@ ENV XDG_DATA_HOME=/data XDG_CONFIG_HOME=/config CADDY_ADMIN=unix//run/caddy/admi
 EXPOSE 80 443 443/udp
 ENTRYPOINT ["/caddy"]
 CMD ["run", "--resume"]
+
+# relay-dns : un résolveur pour la zone locale (tous ses noms vers cette
+# machine), le reste transmis. dnsmasq seul, sans root : le port 53 s'ouvre par
+# le sysctl net.ipv4.ip_unprivileged_port_start du conteneur (compose).
+FROM ${NODE_IMAGE} AS dns
+RUN apk add --no-cache dnsmasq && addgroup -S -g 10003 dns && adduser -S -G dns -u 10003 -H -s /sbin/nologin dns
+USER 10003:10003
+EXPOSE 53/udp 53/tcp
+ENTRYPOINT ["dnsmasq", "--keep-in-foreground", "--log-facility=-", "--pid-file=", "--no-hosts", "--no-resolv", "--domain-needed", "--bogus-priv", "--cache-size=1000", "--server=1.1.1.1", "--server=9.9.9.9"]
 
 FROM ${NODE_IMAGE} AS relay
 RUN apk add --no-cache tini \
