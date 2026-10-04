@@ -26,6 +26,7 @@ ajouterPictos({
   pause: '<path d="M9 5v14M15 5v14"/>',
   play: '<path d="M7 5v14l11-7z"/>',
   crayon: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
+  actions: '<circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/>',
 });
 
 const MODES = { local: 'Local — certificat de Relay', public: 'Public — Let\'s Encrypt', clair: 'Sans TLS — derrière un tunnel ou un relais' };
@@ -87,7 +88,7 @@ const interrupteur = (marche, libelle, surChange) => {
   b.valeur = () => b.getAttribute('aria-checked') === 'true';
   return b;
 };
-const ligneReglage = (titre, aide, controle) => h('div', { class: 'flowrow' }, h('div', {}, h('strong', { text: titre }), aide ? h('small', { text: aide }) : null), h('div', { class: 'fin' }, controle));
+const ligneReglage = (titre, aide, controle) => h('div', { class: 'reglage-ligne' }, h('div', {}, h('strong', { text: titre }), aide ? h('small', { text: aide }) : null), controle);
 const telecharger = async (chemin, nom) => {
   const r = await fetch(chemin, { credentials: 'same-origin' });
   if (!r.ok) { let m = 'Téléchargement impossible.'; try { m = (await r.json()).error || m; } catch { /* corps non JSON */ } throw new Error(m); }
@@ -265,9 +266,9 @@ function carteCloudflare(c) {
     jeton, h('div', { class: 'row2 mt9' }, compte, tunnel),
     ligneReglage('Publier par le tunnel', 'Les routes cochées « tunnel » reçoivent leur entrée d’ingress et leur CNAME.', actif),
     h('div', { class: 'actions mt12' },
-      h('button', { class: 'btn', type: 'button', onclick: tester }, 'Tester le jeton'),
-      h('button', { class: 'btn', type: 'button', onclick: sur(async () => { const o = await api.post('/api/cloudflare/synchroniser'); toast(`${o.faits.length} nom(s) republié(s)${o.erreurs.length ? `, ${o.erreurs.length} en erreur` : ''}.`, !!o.erreurs.length); }) }, 'Republier tout'),
-      h('button', { class: 'btn solid', type: 'button', onclick: enregistrer }, 'Enregistrer'))));
+      h('button', { class: 'btn sm', type: 'button', onclick: tester }, 'Tester le jeton'),
+      h('button', { class: 'btn sm', type: 'button', onclick: sur(async () => { const o = await api.post('/api/cloudflare/synchroniser'); toast(`${o.faits.length} nom(s) republié(s)${o.erreurs.length ? `, ${o.erreurs.length} en erreur` : ''}.`, !!o.erreurs.length); }) }, 'Tout republier')),
+    h('div', { class: 'actions mt9' }, h('button', { class: 'btn solid', type: 'button', onclick: enregistrer }, 'Enregistrer'))));
 }
 
 function carteTelegram(t) {
@@ -282,11 +283,12 @@ function carteTelegram(t) {
     ligneReglage('Alertes', 'Une cible cesse ou reprend de répondre ; Caddy refuse une configuration.', alertes),
     ligneReglage('Commandes', '/etat, /routes, /sonder, /pause, /reprendre, /appliquer — depuis le chat lié seulement.', commandes),
     h('div', { class: 'actions mt12' },
-      h('button', { class: 'btn', type: 'button', onclick: sur(async () => {
+      h('button', { class: 'btn sm', type: 'button', onclick: sur(async () => {
         const o = await api.post('/api/telegram/lier');
         dialogue({ titre: 'Lier ce chat', texte: `Envoie « /lier ${o.code} » à ${o.bot || 'ton bot'} depuis la conversation voulue, dans les dix minutes.`, boutons: [{ texte: 'Fermer', classe: 'solid', valeur: true }] });
-      }) }, icone('avion', 15), 'Lier un chat'),
-      h('button', { class: 'btn', type: 'button', onclick: sur(async () => { await api.post('/api/telegram/essai'); toast('Message envoyé.'); }) }, 'Envoyer un essai'),
+      }) }, icone('avion', 14), 'Lier un chat'),
+      h('button', { class: 'btn sm', type: 'button', onclick: sur(async () => { await api.post('/api/telegram/essai'); toast('Message envoyé.'); }) }, 'Essai')),
+    h('div', { class: 'actions mt9' },
       h('button', { class: 'btn solid', type: 'button', onclick: sur(async () => {
         const o = await api.put('/api/reglages/telegram', { alertes: alertes.valeur(), commandes: commandes.valeur(), ...(jeton.value.trim() ? { jeton: jeton.value.trim() } : {}) });
         jeton.value = ''; peindreStatut({ ...t, ...o }); toast('Telegram enregistré.');

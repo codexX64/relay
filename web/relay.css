@@ -5,3 +5,8 @@
 .cardbody .flowrow{padding-left:0;padding-right:0}
 .note.erreur{color:var(--alarm)}
 details>summary{cursor:pointer;color:var(--muted);font-size:13px;margin-top:4px}
+.reglage-ligne{display:flex;align-items:center;gap:14px;padding:12px 0;border-top:1px solid var(--hair);margin-top:12px}
+.reglage-ligne>div{flex:1;min-width:0}
+.reglage-ligne strong{display:block;font-size:13.5px}
+.reglage-ligne small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.reglage-ligne .toggle{flex:none}
