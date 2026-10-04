@@ -7,7 +7,7 @@ name: relay
 services:
   caddy:
     build: { context: ., target: caddy }
-    image: ghcr.io/codexx64/relay-caddy:2.0.0
+    image: ghcr.io/codexx64/relay-caddy:2.0.1
     container_name: relay-caddy
     restart: unless-stopped
     ports: ["80:80", "443:443", "443:443/udp"]
@@ -22,10 +22,11 @@ services:
 
   dns:
     build: { context: ., target: dns }
-    image: ghcr.io/codexx64/relay-dns:2.0.0
+    image: ghcr.io/codexx64/relay-dns:2.0.1
     container_name: relay-dns
     restart: unless-stopped
     command: ["--address=/${RELAY_ZONE:-home.arpa}/${RELAY_IP:?RELAY_IP est requis}"]
+    volumes: ["relay-dns:/etc/relay-hosts:ro"]
     ports: ["${RELAY_IP:?RELAY_IP est requis}:53:53/udp", "${RELAY_IP:?RELAY_IP est requis}:53:53/tcp"]
     sysctls:
       net.ipv4.ip_unprivileged_port_start: "53"
@@ -36,14 +37,15 @@ services:
 
   relay:
     build: { context: ., target: relay }
-    image: ghcr.io/codexx64/relay:2.0.0
+    image: ghcr.io/codexx64/relay:2.0.1
     container_name: relay
     restart: unless-stopped
     depends_on: [caddy]
     ports: ["127.0.0.1:8095:8095"]
-    volumes: [relay-data:/data, caddy-admin:/run/caddy]
+    volumes: [relay-data:/data, caddy-admin:/run/caddy, relay-dns:/run/dns]
     env_file: [.env]
     environment:
+      RELAY_DNS_DIR: /run/dns
       RELAY_CADDY_SOCKET: /run/caddy/admin.sock
       RELAY_CADDY_SERVICE: http://relay-caddy:80
     read_only: true
@@ -57,6 +59,7 @@ volumes:
   caddy-config:
   caddy-admin:
   relay-data:
+  relay-dns:
 
 networks:
   relay:

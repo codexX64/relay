@@ -3,7 +3,7 @@
 // invalide arrête le processus avec la liste complète des erreurs.
 import { lireConfig } from '../socle/src/index.js';
 
-export const VERSION = '2.0.0';
+export const VERSION = '2.0.1';
 
 export function lireConfigRelay(env = process.env) {
   return lireConfig({
@@ -21,6 +21,8 @@ export function lireConfigRelay(env = process.env) {
     jetonHub: { env: 'RELAY_HUB_TOKEN', type: 'secret', min: 24 },
     // Adresse de la machine, pour les noms locaux (.lan) et la sonde.
     ip: { env: 'RELAY_IP', type: 'chaine', motif: /^(\d{1,3}\.){3}\d{1,3}$/ },
+    // Le dossier que lit le résolveur (dnsmasq --hostsdir) : Relay y écrit ses noms.
+    dossierDns: { env: 'RELAY_DNS_DIR', type: 'chaine', defaut: '' },
     acme: { env: 'ACME_EMAIL', type: 'chaine', motif: /^[^\s@]+@[^\s@]+\.[^\s@]+$/ },
     // Reprise d'un Relay 1.x : son dossier data/ (routes.json, settings.json).
     reprise: { env: 'RELAY_REPRISE', type: 'chaine' },

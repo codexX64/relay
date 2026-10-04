@@ -246,6 +246,7 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
     const n = magasin.poserReglage('general', b);
     tracer(ctx, qui, 'reglages.general', 'general', b);
     if ('acme' in b) relais.appliquer().catch(() => {});
+    if ('domaines' in b) { try { relais.ecrireDns(); } catch { /* repris au prochain tour */ } }
     return n;
   }, { role: 'admin', jeton: true });
 

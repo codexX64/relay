@@ -4,7 +4,7 @@
 #                  Argon2id sont dans le moteur) ;
 #   relay-caddy  : Caddy, binaire officiel vérifié par son empreinte SHA-512,
 #                  posé seul sur une image vide, sans shell ni utilisateur root ;
-#   relay-dns    : dnsmasq, pour que les noms de la zone locale mènent ici.
+#   relay-dns    : dnsmasq, pour que les noms servis par Relay mènent ici.
 # Image de base épinglée par empreinte (index multi-architecture amd64 +
 # arm64) : une étiquette peut être déplacée, une empreinte non.
 ARG NODE_IMAGE=node:24.21.0-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
@@ -39,15 +39,17 @@ CMD ["run", "--resume"]
 # machine), le reste transmis. dnsmasq seul, sans root : le port 53 s'ouvre par
 # le sysctl net.ipv4.ip_unprivileged_port_start du conteneur (compose).
 FROM ${NODE_IMAGE} AS dns
-RUN apk add --no-cache dnsmasq && addgroup -S -g 10003 dns && adduser -S -G dns -u 10003 -H -s /sbin/nologin dns
+# /etc/relay-hosts : les noms que Relay y écrit (volume partagé, lu seul ici).
+RUN apk add --no-cache dnsmasq && addgroup -S -g 10003 dns && adduser -S -G dns -u 10003 -H -s /sbin/nologin dns \
+ && mkdir -p /etc/relay-hosts && chown 10001:10001 /etc/relay-hosts && chmod 755 /etc/relay-hosts
 USER 10003:10003
 EXPOSE 53/udp 53/tcp
-ENTRYPOINT ["dnsmasq", "--keep-in-foreground", "--log-facility=-", "--pid-file=", "--no-hosts", "--no-resolv", "--domain-needed", "--bogus-priv", "--cache-size=1000", "--server=1.1.1.1", "--server=9.9.9.9"]
+ENTRYPOINT ["dnsmasq", "--keep-in-foreground", "--log-facility=-", "--pid-file=", "--no-hosts", "--no-resolv", "--domain-needed", "--bogus-priv", "--cache-size=1000", "--hostsdir=/etc/relay-hosts", "--server=1.1.1.1", "--server=9.9.9.9"]
 
 FROM ${NODE_IMAGE} AS relay
 RUN apk add --no-cache tini \
  && addgroup -S -g 10001 relay && adduser -S -G relay -u 10001 -H -s /sbin/nologin relay \
- && mkdir -p /data /run/caddy && chown relay:relay /data && chmod 700 /data && chown 10002:10002 /run/caddy && chmod 755 /run/caddy
+ && mkdir -p /data /run/caddy /run/dns && chown relay:relay /data /run/dns && chmod 700 /data && chmod 755 /run/dns && chown 10002:10002 /run/caddy && chmod 755 /run/caddy
 WORKDIR /app
 COPY package.json ./
 COPY socle ./socle

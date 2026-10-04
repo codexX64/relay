@@ -17,6 +17,7 @@ import { Cloudflare } from '../src/cloudflare.js';
 
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-'));
 const SOCKET = path.join(tmp, 'admin.sock');
+const DNS = path.join(tmp, 'dns'); fs.mkdirSync(DNS);
 const JETON_HUB = 'jeton-du-hub-pour-les-essais-0123456789';
 const silence = { info() {}, warn() {}, error() {} };
 
@@ -87,7 +88,7 @@ before(async () => {
   const t = net.createServer(); await new Promise(r => t.listen(0, '127.0.0.1', r)); cibleMorte = t.address().port; await new Promise(r => t.close(r));
   relay = await demarrer({
     DATA_DIR: path.join(tmp, 'data'), PORT: '0', HOTE: '127.0.0.1', RELAY_CADDY_SOCKET: SOCKET, RELAY_HUB_TOKEN: JETON_HUB,
-    RELAY_CF_API: ext + '/cf', RELAY_TG_API: ext + '/tg', SOCLE_JETON_INSTALLATION: 'jeton-d-installation-pour-les-essais',
+    RELAY_CF_API: ext + '/cf', RELAY_TG_API: ext + '/tg', RELAY_IP: '192.0.2.10', RELAY_DNS_DIR: DNS, SOCLE_JETON_INSTALLATION: 'jeton-d-installation-pour-les-essais',
   }, { log: silence });
   port = relay.port;
   admin = new Client(port);
@@ -157,6 +158,23 @@ test('publication par le Hub : idempotente, au domaine de base, jamais sur le no
   await relay.relais.sonderTout();
   const e = (await hubReq('GET', '/api/etat')).json;
   assert.equal(e.routes.find(x => x.hote === 'carte.exemple.fr').sante.ok, true);
+});
+
+test('noms locaux : chaque nom servi et chaque domaine de base mènent à la machine, quel que soit le domaine ; le tunnel reste au DNS public', async () => {
+  const lire = () => fs.readFileSync(path.join(DNS, 'relay.hosts'), 'utf8');
+  assert.equal((await hubReq('PUT', '/api/reglages/general', { domaines: ['mon-domaine.fr', 'exemple.fr'] })).status, 200);
+  assert.match(lire(), /^192\.0\.2\.10 mon-domaine\.fr$/m, 'le domaine de base, aussitôt posé');
+  const r = await hubReq('PUT', '/api/hub/publication', { service: 'carnet', sousDomaine: 'carnet', cible: `127.0.0.1:${cible.address().port}` });
+  assert.equal(r.json.url, 'https://carnet.mon-domaine.fr');
+  assert.match(lire(), /^192\.0\.2\.10 carnet\.mon-domaine\.fr$/m, 'un nom publié mène à la machine');
+  await hubReq('PUT', '/api/hub/publication', { service: 'portail', hote: 'portail.exemple.fr', cible: 'hub-portail:80', mode: 'cloudflare' });
+  assert.doesNotMatch(lire(), /portail\.exemple\.fr/, 'une route du tunnel n’a pas de nom local');
+  await hubReq('DELETE', '/api/hub/publication?service=carnet');
+  assert.doesNotMatch(lire(), /carnet/, 'un nom retiré disparaît');
+  await hubReq('DELETE', '/api/hub/publication?service=portail');
+  assert.deepEqual(fs.readdirSync(DNS), ['relay.hosts'], 'aucun fichier intermédiaire ne reste');
+  assert.equal(relay.relais.ecrireDns(), false, 'rien de changé : rien de réécrit');
+  await hubReq('PUT', '/api/reglages/general', { domaines: ['exemple.fr'] });
 });
 
 test('une écriture que Caddy refuse est défaite, et son message remonte tel quel', async () => {

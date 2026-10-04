@@ -34,6 +34,7 @@ export async function demarrer(env = process.env, { log = CONSOLE } = {}) {
   let telegram = null;
   const relais = new Relais({
     magasin, caddy, cloudflare, socket: cfg.caddySocket, journal: socle.journal,
+    dns: cfg.dossierDns ? { dossier: cfg.dossierDns, ip: cfg.ip } : null,
     alerter: (type, texte) => telegram?.alerte(`${ICONE[type] || ''} <b>Relay</b> — ${texte.replace(/&/g, '&amp;').replace(/</g, '&lt;')}`),
   });
   telegram = new Telegram({ magasin, relais, api: cfg.tgApi, journal: socle.journal });

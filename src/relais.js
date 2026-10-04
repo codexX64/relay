@@ -1,7 +1,9 @@
 // Le cœur de Relay : créer, changer, retirer une route, et l'appliquer. Une
 // écriture que Caddy refuse est défaite, en base comme chez lui ; un refus de
 // Cloudflare n'empêche pas la route d'exister, il revient comme avertissement.
+import fs from 'node:fs';
 import net from 'node:net';
+import path from 'node:path';
 import { construire, lireCible } from './caddy.js';
 import { HOTE, CIBLE, MODES } from './base.js';
 
@@ -31,19 +33,43 @@ export function normaliser(e, base = {}) {
 }
 
 export class Relais {
-  constructor({ magasin, caddy, cloudflare, socket, journal, alerter = () => {}, maintenant = () => Date.now() }) {
-    Object.assign(this, { magasin, caddy, cloudflare, socket, journal, alerter, maintenant });
+  // dns : { dossier, ip } — le dossier que lit le résolveur de Relay, et l'adresse de la machine.
+  constructor({ magasin, caddy, cloudflare, socket, journal, dns = null, alerter = () => {}, maintenant = () => Date.now() }) {
+    Object.assign(this, { magasin, caddy, cloudflare, socket, journal, dns, alerter, maintenant });
     this.sante = new Map();
   }
 
   configuration() { return construire(this.magasin.routes(), { socket: this.socket, acme: this.magasin.reglage('general').acme }); }
+  /**
+   * Chaque nom que Relay sert, et chaque domaine de base, mène à cette machine
+   * pour son résolveur, quel que soit le domaine. Une route du tunnel Cloudflare
+   * reste au DNS public : en local, son nom n'a pas de certificat ici.
+   * Écrit seulement quand la liste change ; le résolveur relit le dossier seul.
+   */
+  ecrireDns() {
+    if (!this.dns?.dossier || !this.dns.ip) return false;
+    const noms = new Set(this.magasin.reglage('general').domaines || []);
+    for (const r of this.magasin.routes()) if (r.actif && !r.cf) noms.add(r.hote);
+    const texte = '# Écrit par Relay : chaque nom servi ici mène à cette machine.\n'
+      + [...noms].sort().map(n => `${this.dns.ip} ${n}`).join('\n') + '\n';
+    const fichier = path.join(this.dns.dossier, 'relay.hosts');
+    try { if (fs.readFileSync(fichier, 'utf8') === texte) return false; } catch { /* pas encore écrit */ }
+    // Un nom en point : le résolveur ignore ce fichier le temps de l'écriture.
+    const neuf = path.join(this.dns.dossier, '.relay.hosts.neuf');
+    fs.writeFileSync(neuf, texte, { mode: 0o644 });
+    fs.renameSync(neuf, fichier);
+    return true;
+  }
+
   async appliquer() {
+    try { this.ecrireDns(); } catch (e) { this.alerter('caddy', `Noms locaux non écrits : ${e.message.slice(0, 200)}`); }
     try { await this.caddy.charger(this.configuration()); }
     catch (e) { this.alerter('caddy', `Caddy a refusé la configuration : ${e.message.slice(0, 300)}`); throw e; }
   }
 
   /** Caddy a redémarré sans sa configuration (ou un autre l'a changée) : on la lui rend. */
   async reconcilier() {
+    try { this.ecrireDns(); } catch { /* signalé par appliquer() */ }
     const attendu = this.configuration().apps.http.servers;
     const servi = await this.caddy.serveurs();
     if (canonique(servi || {}) !== canonique(attendu)) { await this.appliquer(); return true; }
