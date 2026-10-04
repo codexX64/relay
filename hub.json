@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "id": "relay",
   "name": "Relay",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "Un nom par service : HTTPS local ou Let's Encrypt, tunnel Cloudflare, santé des cibles. Ajoute la page Connexions au Hub.",
   "icon": "globe",
   "repository": "https://github.com/CodexX64/relay",
@@ -70,7 +70,7 @@
       "key": "IMAGE_TAG",
       "label": "Version de l'image",
       "type": "string",
-      "default": "2.0.1",
+      "default": "2.0.2",
       "help": "Étiquette des images relay et relay-caddy.",
       "advanced": true
     },
