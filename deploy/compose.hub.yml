@@ -1,0 +1,105 @@
+# Relay installé par le Hub : Caddy (le trafic, ports 80 et 443 de la
+# machine) et Relay (les routes, l'interface, l'API du Hub). Les {{...}} sont
+# remplacés à l'installation : secrets générés, port d'hôte de l'interface,
+# volumes nommés et réseau partagé du Hub, où Caddy joint chaque service par
+# son nom de conteneur.
+services:
+  caddy:
+    image: ghcr.io/codexx64/relay-caddy:{{config.IMAGE_TAG}}
+    container_name: {{service.host}}-caddy
+    restart: unless-stopped
+    networks: [hub]
+    ports:
+      - "{{config.RELAY_BIND}}:80:80"
+      - "{{config.RELAY_BIND}}:443:443"
+      - "{{config.RELAY_BIND}}:443:443/udp"
+    # Ni root ni capacité : le conteneur ouvre ses ports bas par ce réglage,
+    # propre à son espace réseau.
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "80"
+    volumes:
+      - {{volume.caddy}}:/data
+      - {{volume.config}}:/config
+      # L'API d'administration de Caddy : un socket dans ce volume, que seuls
+      # Caddy et Relay montent. Aucun port ne l'expose.
+      - {{volume.admin}}:/run/caddy
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 1.0
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  relay:
+    image: ghcr.io/codexx64/relay:{{config.IMAGE_TAG}}
+    container_name: {{service.host}}
+    restart: unless-stopped
+    depends_on: [caddy]
+    networks: [hub]
+    ports:
+      - "{{hostport.http}}:8095"
+    volumes:
+      - {{volume.data}}:/data
+      - {{volume.admin}}:/run/caddy
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 256m
+    cpus: 0.5
+    pids_limit: 128
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+    environment:
+      PORT: "8095"
+      DATA_DIR: /data
+      RELAY_CADDY_SOCKET: /run/caddy/admin.sock
+      # cloudflared joint Caddy en clair sur le réseau du Hub.
+      RELAY_CADDY_SERVICE: "http://{{service.host}}-caddy:80"
+      # Jeton du Hub : les routes et la publication des services, jamais les
+      # comptes, les jetons de services ni les réglages.
+      RELAY_HUB_TOKEN: "{{config.HUB_TOKEN}}"
+      RELAY_IP: "{{config.RELAY_IP}}"
+      ACME_EMAIL: "{{config.ACME_EMAIL}}"
+      SOCLE_CLE: "{{config.SOCLE_CLE}}"
+      SOCLE_CLE_ANCIENNE: "{{config.SOCLE_CLE_ANCIENNE}}"
+      SOCLE_HTTP: "{{config.SOCLE_HTTP}}"
+      SOCLE_JETON_INSTALLATION: "{{config.SOCLE_JETON_INSTALLATION}}"
+      SOCLE_JETON_ADMIN_HUB: "{{config.HUB_ADMIN_TOKEN}}"
+      SOCLE_PROXYS: "{{config.SOCLE_PROXYS}}"
+      SOCLE_ORIGINES: "{{config.SOCLE_ORIGINES}}"
+      SOCLE_THEME: "{{hub.theme}}"
+      SOCLE_URL_PUBLIQUE: "{{config.SOCLE_URL_PUBLIQUE}}"
+      SOCLE_SMTP_HOTE: "{{config.SOCLE_SMTP_HOTE}}"
+      SOCLE_SMTP_PORT: "{{config.SOCLE_SMTP_PORT}}"
+      SOCLE_SMTP_SECURITE: "{{config.SOCLE_SMTP_SECURITE}}"
+      SOCLE_SMTP_UTILISATEUR: "{{config.SOCLE_SMTP_UTILISATEUR}}"
+      SOCLE_SMTP_MOTDEPASSE: "{{config.SOCLE_SMTP_MOTDEPASSE}}"
+      SOCLE_SMTP_DE: "{{config.SOCLE_SMTP_DE}}"
+      TZ: "{{hub.tz}}"
+
+networks:
+  hub:
+    name: {{hub.network}}
+    external: true
+
+volumes:
+  {{volume.data}}:
+    name: {{volume.data}}
+  {{volume.caddy}}:
+    name: {{volume.caddy}}
+  {{volume.config}}:
+    name: {{volume.config}}
+  {{volume.admin}}:
+    name: {{volume.admin}}

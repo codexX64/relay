@@ -1,0 +1,48 @@
+# Relay seul, sans le Hub : docker compose up -d --build
+# Poser RELAY_IP (adresse de la machine) et RELAY_HUB_TOKEN (ou laisser vide
+# sans Hub) dans .env. Le jeton d'installation du premier compte s'affiche
+# dans « docker compose logs relay ».
+name: relay
+
+services:
+  caddy:
+    build: { context: ., target: caddy }
+    image: ghcr.io/codexx64/relay-caddy:2.0.0
+    container_name: relay-caddy
+    restart: unless-stopped
+    ports: ["80:80", "443:443", "443:443/udp"]
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: "80"
+    volumes: [caddy-data:/data, caddy-config:/config, caddy-admin:/run/caddy]
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [relay]
+
+  relay:
+    build: { context: ., target: relay }
+    image: ghcr.io/codexx64/relay:2.0.0
+    container_name: relay
+    restart: unless-stopped
+    depends_on: [caddy]
+    ports: ["127.0.0.1:8095:8095"]
+    volumes: [relay-data:/data, caddy-admin:/run/caddy]
+    env_file: [.env]
+    environment:
+      RELAY_CADDY_SOCKET: /run/caddy/admin.sock
+      RELAY_CADDY_SERVICE: http://relay-caddy:80
+    read_only: true
+    tmpfs: ["/tmp:size=16m,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [relay]
+
+volumes:
+  caddy-data:
+  caddy-config:
+  caddy-admin:
+  relay-data:
+
+networks:
+  relay:
