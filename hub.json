@@ -8,7 +8,7 @@
   "icon": "globe",
   "repository": "https://github.com/CodexX64/relay",
   "license": "MIT",
-  "minHubVersion": "0.8.0",
+  "minHubVersion": "0.8.3",
   "install": {
     "type": "compose",
     "compose": "deploy/compose.hub.yml",
@@ -67,15 +67,17 @@
       "label": "Version de l'image",
       "type": "string",
       "default": "2.0.0",
-      "help": "Étiquette des images relay et relay-caddy."
+      "help": "Étiquette des images relay et relay-caddy.",
+      "advanced": true
     },
     {
       "key": "RELAY_IP",
       "label": "Adresse IP de cette machine",
       "type": "string",
-      "required": true,
-      "help": "L'adresse IPv4 de cette machine sur ton réseau (ex. 192.0.2.10), pas 0.0.0.0 : les noms locaux y pointent et le résolveur n'écoute que sur elle.",
-      "pattern": "^(?!0\\.0\\.0\\.0$)(\\d{1,3}\\.){3}\\d{1,3}$"
+      "help": "Vide : l'adresse de cette machine, que le Hub connaît (Réglages → Adresse de la machine). Les noms locaux y pointent et le résolveur n'écoute que sur elle.",
+      "pattern": "^(?!0\\.0\\.0\\.0$)(\\d{1,3}\\.){3}\\d{1,3}$",
+      "default": "{{hub.ip}}",
+      "advanced": true
     },
     {
       "key": "RELAY_BIND",
@@ -133,7 +135,8 @@
           "label": "Oui — réseau de confiance, mode dégradé"
         }
       ],
-      "help": "Les clés d'accès n'existent qu'en HTTPS. En mode dégradé, l'administrateur se connecte avec mot de passe et application d'authentification, et Relay l'affiche partout."
+      "help": "Les clés d'accès n'existent qu'en HTTPS. En mode dégradé, l'administrateur se connecte avec mot de passe et application d'authentification, et Relay l'affiche partout.",
+      "advanced": true
     },
     {
       "key": "SOCLE_CLE",

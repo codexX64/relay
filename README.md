@@ -59,7 +59,7 @@ republier depuis le Hub : Relay 2 ne monte plus le socket Docker.
 
 | Variable | Défaut | |
 |---|---|---|
-| `RELAY_IP` | — | adresse de la machine sur le réseau local |
+| `RELAY_IP` | adresse de la machine connue du Hub | adresse de la machine sur le réseau local, remplie seule à l’installation par le Hub |
 | `RELAY_ZONE` | `home.arpa` | zone dont tous les noms mènent ici |
 | `RELAY_HUB_TOKEN` | — | jeton du Hub (généré par le Hub) |
 | `RELAY_CADDY_SOCKET` | `/run/caddy/admin.sock` | API d'administration de Caddy |
