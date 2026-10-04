@@ -74,7 +74,8 @@
       "label": "Adresse IP de cette machine",
       "type": "string",
       "required": true,
-      "help": "L'adresse que les postes du réseau utilisent pour joindre Relay (ex. 192.0.2.10) : les noms locaux y pointent."
+      "help": "L'adresse IPv4 de cette machine sur ton réseau (ex. 192.0.2.10), pas 0.0.0.0 : les noms locaux y pointent et le résolveur n'écoute que sur elle.",
+      "pattern": "^(?!0\\.0\\.0\\.0$)(\\d{1,3}\\.){3}\\d{1,3}$"
     },
     {
       "key": "RELAY_BIND",
@@ -82,7 +83,8 @@
       "type": "string",
       "default": "0.0.0.0",
       "advanced": true,
-      "help": "0.0.0.0 : toutes les interfaces. Une adresse précise pour n'écouter que sur elle."
+      "help": "0.0.0.0 : toutes les interfaces. Une adresse précise pour n'écouter que sur elle.",
+      "pattern": "^(\\d{1,3}\\.){3}\\d{1,3}$"
     },
     {
       "key": "RELAY_ZONE",
