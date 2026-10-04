@@ -1,0 +1,11 @@
+Relay — ce qui est gardé
+
+Comptes : identifiant, empreinte du mot de passe (Argon2id), facteurs (TOTP scellé, clés d'accès), sessions et journal de sécurité, comme tous les services du socle.
+Routes : nom, cible, mode, dates. Aucune requête relayée n'est enregistrée par Relay ; Caddy ne journalise pas les accès.
+Services raccordés : nom et empreinte du jeton (le jeton lui-même n'est montré qu'une fois).
+Réglages : domaines, adresse Let's Encrypt, jetons Cloudflare et Telegram scellés par la clé maîtresse.
+
+Ce qui part ailleurs :
+- Let's Encrypt, pour une route en mode public : le nom à certifier et l'adresse de contact.
+- Cloudflare, si le tunnel est activé : le nom de chaque route cochée.
+- Telegram, si un bot est lié : les messages d'alerte (nom de la route et sa cible).

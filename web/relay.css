@@ -1,0 +1,7 @@
+/* Relay : ce que SOMA (socle/web/soma.css) ne porte pas déjà. */
+.mt0{margin-top:0}.mt9{margin-top:9px}.mt11{margin-top:11px}.mt12{margin-top:12px}
+.grow1{min-width:0;flex:1}
+.cardbody{padding:4px 18px 16px}
+.cardbody .flowrow{padding-left:0;padding-right:0}
+.note.erreur{color:var(--alarm)}
+details>summary{cursor:pointer;color:var(--muted);font-size:13px;margin-top:4px}
