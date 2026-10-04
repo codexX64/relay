@@ -21,7 +21,7 @@ Trois conteneurs :
 
 | Mode | Certificat | Quand |
 |---|---|---|
-| Local | signé par l'autorité interne de Caddy | un nom qui ne sort pas du réseau (`home.arpa`, `lan`) — installe le « Certificat local » sur les postes |
+| Local | Let's Encrypt par le défi DNS si le domaine est chez Cloudflare (jeton connecté) ; sinon l'autorité interne de Caddy | un nom qui ne sort pas du réseau — chez Cloudflare, rien à installer sur les appareils ; ailleurs (`home.arpa`), le résolveur et le « Certificat local » de Relay sur chaque poste |
 | Public | Let's Encrypt | le nom pointe sur cette machine et 80/443 sont ouverts depuis Internet |
 | Sans TLS | aucun (HTTP sur le port 80) | derrière le tunnel Cloudflare ou un autre relais |
 
@@ -30,16 +30,23 @@ Cloudflare qui porte le HTTPS, et le mode public ferait boucler la redirection.
 
 ## Avec le Hub
 
-1. Hub → Extensions → Catalogue → **Relay** → Installer. Seul réglage demandé :
-   l'adresse IP de la machine.
-2. Hub → Comptes des services → Relay → « Créer l'administrateur ».
-3. Dans Relay → Réglages : le domaine de base (ex. `home.arpa` ou ton domaine).
-4. La page **Connexions** du Hub apparaît : chaque service installé y a sa
-   route, et « Publier » en ajoute une pour ceux qui n'en ont pas.
+1. Hub → Extensions → Catalogue → **Relay** → Installer. Rien à remplir :
+   l'adresse de la machine vient du Hub.
+2. Hub → Connexions → **Connecter Cloudflare** : un jeton d'API (Zone → DNS →
+   Modifier, Zone → Zone → Lire). Chaque nom local d'un domaine du compte reçoit
+   un enregistrement A vers la machine (non proxifié, marqué « géré par Relay »)
+   et un certificat Let's Encrypt par le défi DNS.
+3. Hub → Connexions → **Domaines** : ajoute les domaines (ceux du compte
+   Cloudflare, ou `home.arpa`). Chaque route se nomme « nom . domaine ».
 
-Le Hub parle à Relay avec son propre jeton : routes et publication, jamais les
-comptes, les jetons de services ni les réglages (Cloudflare, Telegram), qui
-restent dans l'interface de Relay, sous renfort.
+Le Hub parle à Relay avec son propre jeton : routes, publication et jeton
+Cloudflare (écrit, jamais relu). Jamais les comptes, les jetons de services ni
+Telegram, qui restent dans l'interface de Relay, sous renfort.
+
+Le jeton Cloudflare est scellé dans la base de Relay. Caddy le reçoit dans sa
+configuration, en mémoire seulement (`persist: false`) : Relay la lui rend à
+chaque redémarrage. Un nom local publié chez Cloudflare montre l'adresse
+privée de la machine dans le DNS public : il ne s'ouvre que sur ce réseau.
 
 ## Services qui se publient eux-mêmes
 
