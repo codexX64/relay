@@ -10,3 +10,9 @@ details>summary{cursor:pointer;color:var(--muted);font-size:13px;margin-top:4px}
 .reglage-ligne strong{display:block;font-size:13.5px}
 .reglage-ligne small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
 .reglage-ligne .toggle{flex:none}
+
+/* « nom . domaine » dans le formulaire d'une route */
+.saisie-domaine{display:flex;align-items:center;gap:6px;min-width:0}
+.saisie-domaine input{flex:1 1 40%;min-width:0}
+.saisie-domaine select{flex:0 1 auto;max-width:58%;min-width:0;text-overflow:ellipsis}
+.saisie-domaine .point{color:var(--muted);font-family:var(--mono, monospace)}

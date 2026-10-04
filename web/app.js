@@ -141,7 +141,18 @@ async function pageRoutes() {
 
 async function formRoute(r, st, apres) {
   const nouveau = !r;
-  const hote = h('input', { class: 'field', maxlength: 253, placeholder: st.domaines[0] ? `nom.${st.domaines[0]}` : 'carte.exemple.fr', value: r?.hote || '', autocomplete: 'off', spellcheck: 'false' });
+  // « nom . domaine » : le domaine choisi parmi ceux des réglages ; un nom
+  // existant hors de ces domaines garde le sien dans la liste.
+  const doms = [...st.domaines];
+  let nomInit = '', domInit = doms[0] || '';
+  if (r?.hote) {
+    const d = doms.filter(x => r.hote.endsWith(`.${x}`)).sort((a, b) => b.length - a.length)[0];
+    if (d) { nomInit = r.hote.slice(0, -(d.length + 1)); domInit = d; }
+    else { const i = r.hote.indexOf('.'); nomInit = i > 0 ? r.hote.slice(0, i) : r.hote; domInit = i > 0 ? r.hote.slice(i + 1) : ''; if (domInit) doms.push(domInit); }
+  }
+  const sous = h('input', { class: 'field', maxlength: 190, placeholder: 'nom', value: nomInit, autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Nom' });
+  const domaine = h('select', { class: 'field', 'aria-label': 'Domaine' }, doms.length ? doms.map(d => h('option', { value: d, text: d, selected: d === domInit })) : [h('option', { value: '', text: 'aucun domaine' })]);
+  const hote = h('div', { class: 'saisie-domaine' }, sous, h('span', { class: 'point', text: '.', 'aria-hidden': 'true' }), domaine);
   const cible = h('input', { class: 'field', maxlength: 300, placeholder: 'hub-mapmylan:8090 ou https://192.0.2.20:8006', value: r?.cible || '', autocomplete: 'off', spellcheck: 'false' });
   const mode = h('select', { class: 'field', 'aria-label': 'Certificat' }, Object.entries(MODES).map(([v, t]) => h('option', { value: v, text: t, selected: (r?.mode || 'local') === v })));
   const cf = interrupteur(r?.cf, 'Publier par le tunnel Cloudflare');
@@ -163,7 +174,10 @@ async function formRoute(r, st, apres) {
       err,
     ],
     boutons: [{ texte: 'Annuler', classe: 'flat', valeur: false }, { texte: nouveau ? 'Créer' : 'Enregistrer', classe: 'solid', agir: async () => {
-      const corps = { hote: hote.value.trim(), cible: cible.value.trim(), mode: mode.value, verifier: verifier.valeur(), enteteHote: entete.value.trim(), nom: nom.value.trim(), ...(st.cloudflare ? { cf: cf.valeur() } : {}) };
+      if (!domaine.value) { err.textContent = 'Ajoute d’abord un domaine dans les réglages.'; return false; }
+      const n = sous.value.trim().toLowerCase().replace(/^\.+|\.+$/g, '');
+      if (!n) { err.textContent = 'Nom : obligatoire.'; return false; }
+      const corps = { hote: `${n}.${domaine.value}`, cible: cible.value.trim(), mode: mode.value, verifier: verifier.valeur(), enteteHote: entete.value.trim(), nom: nom.value.trim(), ...(st.cloudflare ? { cf: cf.valeur() } : {}) };
       try {
         const o = nouveau ? await api.post('/api/routes', corps) : await api.patch(`/api/routes/${r.id}`, corps);
         if (o.avertissement) toast(o.avertissement, true);
