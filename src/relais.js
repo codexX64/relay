@@ -39,7 +39,10 @@ export class Relais {
     this.sante = new Map();
   }
 
-  configuration() { return construire(this.magasin.routes(), { socket: this.socket, acme: this.magasin.reglage('general').acme }); }
+  configuration() {
+    const cf = this.cloudflare.connecte() ? { zones: this.cloudflare.zones(), jeton: this.cloudflare.jeton() } : null;
+    return construire(this.magasin.routes(), { socket: this.socket, acme: this.magasin.reglage('general').acme, cloudflare: cf });
+  }
   /**
    * Chaque nom que Relay sert, et chaque domaine de base, mène à cette machine
    * pour son résolveur, quel que soit le domaine. Une route du tunnel Cloudflare
@@ -82,7 +85,8 @@ export class Relais {
     const route = this.magasin.creerRoute({ ...r, proprietaire, client });
     try { await this.appliquer(); } catch (e) { this.magasin.retirerRoute(route.id); throw e; }
     this.sonder(route).catch(() => {});
-    return { route, ...(await this.publierCf(route)) };
+    const avertissement = await this.suivreCf(null, route);
+    return { route, ...(avertissement ? { avertissement } : {}) };
   }
 
   async modifier(id, champs) {
@@ -93,14 +97,7 @@ export class Relais {
     const route = this.magasin.modifierRoute(id, r);
     try { await this.appliquer(); } catch (e) { this.magasin.remettre(avant); throw e; }
     this.sonder(route).catch(() => {});
-    let avertissement = null;
-    if (this.cloudflare.actif()) {
-      try {
-        if (avant.cf && (!route.cf || avant.hote !== route.hote)) await this.cloudflare.retirer(avant.hote);
-        if (route.cf) await this.cloudflare.publier(route.hote);
-      } catch (e) { avertissement = e.message; }
-    }
-    return { route, avertissement };
+    return { route, avertissement: await this.suivreCf(avant, route) };
   }
 
   async retirer(id) {
@@ -109,14 +106,43 @@ export class Relais {
     this.magasin.retirerRoute(id);
     this.sante.delete(id);
     try { await this.appliquer(); } catch (e) { this.magasin.remettre(avant); throw e; }
-    let avertissement = null;
-    if (avant.cf && this.cloudflare.actif()) { try { await this.cloudflare.retirer(avant.hote); } catch (e) { avertissement = e.message; } }
-    return { ok: true, avertissement };
+    return { ok: true, avertissement: await this.suivreCf(avant, null) };
   }
 
-  async publierCf(route) {
-    if (!route.cf || !this.cloudflare.actif()) return {};
-    try { return { cloudflare: await this.cloudflare.publier(route.hote) }; } catch (e) { return { avertissement: e.message }; }
+  /**
+   * Cloudflare suit la route : son nom dans le tunnel (route cochée), ou son
+   * enregistrement A vers la machine (route locale d'une zone du compte).
+   * Jamais bloquant : un refus de Cloudflare revient comme avertissement.
+   */
+  async suivreCf(avant, apres) {
+    const erreurs = [];
+    const essai = async f => { try { await f(); } catch (e) { erreurs.push(e.message); } };
+    if (this.cloudflare.actif()) {
+      if (avant?.cf && (!apres?.cf || avant.hote !== apres.hote)) await essai(() => this.cloudflare.retirer(avant.hote));
+      if (apres?.cf) await essai(() => this.cloudflare.publier(apres.hote));
+    }
+    const ip = this.dns?.ip;
+    if (this.cloudflare.connecte() && ip) {
+      const local = r => !!r && r.actif && !r.cf && r.mode !== 'public' && !!this.cloudflare.zoneDe(r.hote);
+      if (local(avant) && (!local(apres) || avant.hote !== apres.hote)) await essai(() => this.cloudflare.retirerLocal(avant.hote));
+      if (local(apres)) await essai(() => this.cloudflare.poserLocal(apres.hote, ip));
+    }
+    return erreurs.length ? erreurs.join(' ') : null;
+  }
+
+  /** Chaque route locale d'une zone du compte reçoit (ou perd) son enregistrement : après connexion ou déconnexion. */
+  async synchroniserDomaines({ retirer = false } = {}) {
+    const faits = [], erreurs = [];
+    for (const r of this.magasin.routes()) {
+      if (!r.actif || r.cf || r.mode === 'public' || !this.cloudflare.zoneDe(r.hote)) continue;
+      try {
+        if (retirer) await this.cloudflare.retirerLocal(r.hote);
+        else if (this.dns?.ip) await this.cloudflare.poserLocal(r.hote, this.dns.ip);
+        else continue;
+        faits.push(r.hote);
+      } catch (e) { erreurs.push({ hote: r.hote, erreur: e.message }); }
+    }
+    return { faits, erreurs };
   }
 
   // ---- santé : une connexion TCP vers la cible, à chaque tour ----
@@ -152,6 +178,8 @@ export class Relais {
       routes: this.magasin.routes().map(r => ({ ...r, sante: this.sante.get(r.id) || null })),
       caddy: this.caddy.dernier,
       cloudflare: this.cloudflare.actif(),
+      // Les domaines servis par Cloudflare : enregistrement public et certificat Let's Encrypt.
+      zonesCloudflare: this.cloudflare.zones(),
     };
   }
 }

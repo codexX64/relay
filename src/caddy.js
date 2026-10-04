@@ -39,7 +39,7 @@ const routeVersHttps = r => ({
  * local : signé par l'autorité interne de Caddy ; clair : HTTP seul sur le
  * port 80 (derrière le tunnel Cloudflare, ou un autre relais).
  */
-export function construire(routes, { socket, acme = '' }) {
+export function construire(routes, { socket, acme = '', cloudflare = null }) {
   const vivantes = routes.filter(r => r.actif && r.hote && r.cible);
   const tls = vivantes.filter(r => r.mode !== 'clair');
   const clair = vivantes.filter(r => r.mode === 'clair');
@@ -49,11 +49,22 @@ export function construire(routes, { socket, acme = '' }) {
   if (tls.length) serveurs.websecure = { listen: [':443'], routes: tls.map(routeProxy), automatic_https: { disable_redirects: true } };
   // Le socket vit dans un volume que seuls Caddy et Relay montent : 0666 ne
   // l'ouvre à personne d'autre, et Relay ne tourne pas sous l'utilisateur de Caddy.
-  const conf = { admin: { listen: `unix/${socket}|0666` }, apps: { http: { servers: serveurs } } };
+  // persist false : la configuration (et le jeton Cloudflare qu'elle peut
+  // porter) n'est jamais écrite sur le disque de Caddy ; Relay la lui rend à
+  // chaque redémarrage (reconcilier).
+  const conf = { admin: { listen: `unix/${socket}|0666`, config: { persist: false } }, apps: { http: { servers: serveurs } } };
   const politiques = [];
+  const dansZone = h => !!cloudflare?.jeton && (cloudflare.zones || []).some(z => h === z || h.endsWith(`.${z}`));
   const locaux = tls.filter(r => r.mode === 'local').map(r => r.hote);
+  const parDns = locaux.filter(dansZone), internes = locaux.filter(h => !dansZone(h));
   const publics = tls.filter(r => r.mode === 'public').map(r => r.hote);
-  if (locaux.length) politiques.push({ subjects: locaux, issuers: [{ module: 'internal' }] });
+  // Un nom local d'une zone Cloudflare : certificat Let's Encrypt par le défi
+  // DNS (aucun port à ouvrir), reconnu par tous les appareils.
+  if (parDns.length) {
+    politiques.push({ subjects: parDns, issuers: [{ module: 'acme', ...(acme ? { email: acme } : {}),
+      challenges: { dns: { provider: { name: 'cloudflare', api_token: cloudflare.jeton }, resolvers: ['1.1.1.1:53', '1.0.0.1:53'] } } }] });
+  }
+  if (internes.length) politiques.push({ subjects: internes, issuers: [{ module: 'internal' }] });
   if (publics.length) politiques.push({ subjects: publics, issuers: [{ module: 'acme', ...(acme ? { email: acme } : {}) }] });
   if (politiques.length) conf.apps.tls = { automation: { policies: politiques } };
   return conf;

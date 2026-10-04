@@ -45,7 +45,7 @@ const faux = http.createServer((req, res) => {
 });
 
 // ---- fausses API Cloudflare et Telegram ----
-const cf = { ingress: [{ hostname: 'autre.exemple.fr', service: 'http://ailleurs:80' }, { service: 'http_status:404' }], dns: [], ecritures: 0 };
+const cf = { ingress: [{ hostname: 'autre.exemple.fr', service: 'http://ailleurs:80' }, { service: 'http_status:404' }], dns: [], ecritures: 0, n: 0 };
 const tg = { messages: [], maj: [] };
 const externe = http.createServer((req, res) => {
   let corps = '';
@@ -69,8 +69,15 @@ const externe = http.createServer((req, res) => {
     }
     if (u.pathname === '/cf/zones') return ok([{ id: 'z1', name: 'exemple.fr' }]);
     if (u.pathname === '/cf/zones/z1/dns_records') {
-      if (req.method === 'POST') { cf.dns.push(JSON.parse(corps)); return ok({}); }
+      if (req.method === 'POST') { cf.dns.push({ id: `d${++cf.n}`, ...JSON.parse(corps) }); return ok({}); }
       return ok(cf.dns.filter(d => d.name === u.searchParams.get('name')));
+    }
+    const enr = /^\/cf\/zones\/z1\/dns_records\/(\w+)$/.exec(u.pathname);
+    if (enr) {
+      const i = cf.dns.findIndex(d => d.id === enr[1]);
+      if (i < 0) { res.writeHead(404); return res.end('{"success":false}'); }
+      if (req.method === 'DELETE') { cf.dns.splice(i, 1); return ok({}); }
+      if (req.method === 'PUT') { cf.dns[i] = { id: enr[1], ...JSON.parse(corps) }; return ok({}); }
     }
     res.writeHead(404); res.end('{}');
   });
@@ -112,6 +119,16 @@ test('configuration de Caddy : 80 redirige, 443 sert, un certificat par mode, l�
   assert.deepEqual(s.websecure.routes[1].handle[0].transport, { protocol: 'http', tls: { insecure_skip_verify: true } });
   assert.deepEqual(s.web.routes[0].handle[0].headers.request.set['X-Forwarded-Proto'], ['https'], 'derrière le tunnel, le service sait qu’il est en HTTPS');
   assert.deepEqual(conf.apps.tls.automation.policies, [{ subjects: ['a.exemple.fr'], issuers: [{ module: 'internal' }] }, { subjects: ['b.exemple.fr'], issuers: [{ module: 'acme', email: 'ops@exemple.fr' }] }]);
+  assert.deepEqual(conf.admin.config, { persist: false }, 'la configuration n’est jamais écrite sur le disque de Caddy');
+  // Une zone Cloudflare connectée : ses noms locaux ont un certificat Let's Encrypt par le défi DNS.
+  const avecCf = construire([
+    { hote: 'a.exemple.fr', cible: 'hub-a:8090', mode: 'local', actif: true },
+    { hote: 'nas.home.arpa', cible: 'hub-n:80', mode: 'local', actif: true },
+  ], { socket: '/s', cloudflare: { zones: ['exemple.fr'], jeton: 'jeton-cf' } });
+  assert.deepEqual(avecCf.apps.tls.automation.policies, [
+    { subjects: ['a.exemple.fr'], issuers: [{ module: 'acme', challenges: { dns: { provider: { name: 'cloudflare', api_token: 'jeton-cf' }, resolvers: ['1.1.1.1:53', '1.0.0.1:53'] } } }] },
+    { subjects: ['nas.home.arpa'], issuers: [{ module: 'internal' }] },
+  ]);
   assert.deepEqual(lireCible('https://192.0.2.20'), { schema: 'https', hote: '192.0.2.20', port: 443, dial: '192.0.2.20:443' });
 });
 
@@ -175,6 +192,47 @@ test('noms locaux : chaque nom servi et chaque domaine de base mènent à la mac
   assert.deepEqual(fs.readdirSync(DNS), ['relay.hosts'], 'aucun fichier intermédiaire ne reste');
   assert.equal(relay.relais.ecrireDns(), false, 'rien de changé : rien de réécrit');
   await hubReq('PUT', '/api/reglages/general', { domaines: ['exemple.fr'] });
+});
+
+test('domaines chez Cloudflare depuis le Hub : jeton écrit jamais relu, nom local → A vers la machine, certificat Let’s Encrypt, rien d’autre touché', async () => {
+  assert.equal((await hubReq('PUT', '/api/hub/cloudflare', { jeton: 'cf-faux-jeton-0123456789abcdef' })).status, 400);
+  assert.ok([401, 403].includes((await new Client(port).req('PUT', '/api/hub/cloudflare', { jeton: 'cf-jeton-de-test-0123456789abcdef' }, { origine: null })).status), 'sans le jeton du Hub, rien');
+  assert.equal((await hubReq('PUT', '/api/hub/cloudflare', { jeton: 'cf-jeton-de-test-0123456789abcdef' }, 'un-autre-jeton-qui-n-est-pas-celui-du-hub')).status, 401, 'un faux jeton, refusé');
+  let r = await hubReq('PUT', '/api/hub/cloudflare', { jeton: 'cf-jeton-de-test-0123456789abcdef' });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.deepEqual(r.json.zones, ['exemple.fr']);
+  assert.ok(!JSON.stringify((await hubReq('GET', '/api/etat')).json).includes('cf-jeton-de-test'), 'le jeton ne se relit pas');
+  assert.deepEqual((await hubReq('GET', '/api/etat')).json.zonesCloudflare, ['exemple.fr']);
+
+  r = await hubReq('PUT', '/api/hub/publication', { service: 'atelier', hote: 'atelier.exemple.fr', cible: `127.0.0.1:${cible.address().port}` });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  const a = cf.dns.find(d => d.name === 'atelier.exemple.fr');
+  assert.deepEqual({ ...a, id: undefined }, { id: undefined, type: 'A', name: 'atelier.exemple.fr', content: '192.0.2.10', proxied: false, ttl: 300, comment: 'géré par Relay' }, 'le nom mène à la machine, sans passer par Cloudflare');
+  const pol = caddy.conf.apps.tls.automation.policies.find(p => p.subjects.includes('atelier.exemple.fr'));
+  assert.equal(pol.issuers[0].challenges.dns.provider.name, 'cloudflare', 'certificat Let’s Encrypt par le défi DNS');
+  assert.ok(!caddy.conf.apps.tls.automation.policies.some(p => p.issuers[0].module === 'internal' && p.subjects.includes('atelier.exemple.fr')));
+
+  // Un enregistrement écrit par quelqu'un d'autre n'est jamais remplacé.
+  cf.dns.push({ id: 'dx', type: 'A', name: 'perso.exemple.fr', content: '198.51.100.9', proxied: true });
+  r = await hubReq('PUT', '/api/hub/publication', { service: 'perso', hote: 'perso.exemple.fr', cible: 'hub-perso:80' });
+  assert.match(r.json.avertissement || '', /déjà un enregistrement A vers 198\.51\.100\.9/);
+  assert.equal(cf.dns.find(d => d.id === 'dx').content, '198.51.100.9');
+  await hubReq('DELETE', '/api/hub/publication?service=perso');
+  assert.ok(cf.dns.find(d => d.id === 'dx'), 'retirer la route ne touche pas l’enregistrement d’un autre');
+
+  // Un nom hors des zones du compte reste au résolveur de Relay.
+  await hubReq('PUT', '/api/hub/publication', { service: 'local', hote: 'local.home.arpa', cible: 'hub-local:80' });
+  assert.ok(!cf.dns.some(d => d.name === 'local.home.arpa'));
+  await hubReq('DELETE', '/api/hub/publication?service=local');
+
+  // Déconnecter : les enregistrements de Relay partent, les noms reviennent au certificat de Relay.
+  r = await hubReq('DELETE', '/api/hub/cloudflare');
+  assert.equal(r.status, 200);
+  assert.ok(!cf.dns.some(d => d.name === 'atelier.exemple.fr'), 'l’enregistrement de Relay est effacé');
+  assert.ok(caddy.conf.apps.tls.automation.policies.some(p => p.issuers[0].module === 'internal' && p.subjects.includes('atelier.exemple.fr')));
+  assert.deepEqual((await hubReq('GET', '/api/etat')).json.zonesCloudflare, []);
+  await hubReq('DELETE', '/api/hub/publication?service=atelier');
+  cf.dns.splice(cf.dns.findIndex(d => d.id === 'dx'), 1);
 });
 
 test('une écriture que Caddy refuse est défaite, et son message remonte tel quel', async () => {
@@ -258,7 +316,7 @@ test('services raccordés : jeton montré une fois, portée « soi » bornée à
 
 test('Cloudflare : jeton vérifié puis scellé, ingress et CNAME posés pour une route du tunnel, rien d’autre touché', async () => {
   relay.socle.comptes.estRenforcee = () => true;
-  assert.equal((await admin.put('/api/reglages/cloudflare', { jeton: 'cf-faux-jeton-0123456789abcdef' })).status, 502);
+  assert.equal((await admin.put('/api/reglages/cloudflare', { jeton: 'cf-faux-jeton-0123456789abcdef' })).status, 400, 'un jeton refusé est une saisie à corriger');
   const e = await admin.post('/api/cloudflare/essai', { jeton: 'cf-jeton-de-test-0123456789abcdef' });
   assert.equal(e.json.comptes[0].tunnels[0].nom, 'maison');
   let r = await admin.put('/api/reglages/cloudflare', { jeton: 'cf-jeton-de-test-0123456789abcdef', compte: 'a1b2c3', nomCompte: 'Labo', tunnel: '11111111-2222-3333-4444-555555555555', nomTunnel: 'maison', actif: true });
@@ -269,7 +327,8 @@ test('Cloudflare : jeton vérifié puis scellé, ingress et CNAME posés pour un
   assert.equal(r.json.route.mode, 'clair');
   assert.deepEqual(cf.ingress.map(x => x.hostname || x.service), ['autre.exemple.fr', 'public.exemple.fr', 'http_status:404'], 'l’entrée d’un autre et le repli sont gardés');
   assert.equal(cf.ingress[1].service, 'http://relay-caddy:80');
-  assert.deepEqual(cf.dns[0], { type: 'CNAME', name: 'public.exemple.fr', content: '11111111-2222-3333-4444-555555555555.cfargotunnel.com', proxied: true, ttl: 1 });
+  const { id: _id, ...cname } = cf.dns.find(d => d.name === 'public.exemple.fr');
+  assert.deepEqual(cname, { type: 'CNAME', name: 'public.exemple.fr', content: '11111111-2222-3333-4444-555555555555.cfargotunnel.com', proxied: true, ttl: 1 });
   // Un enregistrement qui n'est pas un tunnel n'est jamais remplacé.
   cf.dns.push({ type: 'A', name: 'site.exemple.fr', content: '198.51.100.7' });
   r = await admin.post('/api/routes', { hote: 'site.exemple.fr', cible: 'hub-x:80', mode: 'clair', cf: true });

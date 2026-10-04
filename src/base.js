@@ -45,7 +45,7 @@ export function ouvrirBase(dossier) {
 const DEFAUTS = {
   general: { domaines: [], acme: '', sondeSecondes: 15 },
   telegram: { jeton: null, chat: '', alertes: true, commandes: false },
-  cloudflare: { jeton: null, compte: '', nomCompte: '', tunnel: '', nomTunnel: '', actif: false },
+  cloudflare: { jeton: null, compte: '', nomCompte: '', tunnel: '', nomTunnel: '', actif: false, zones: [] },
 };
 // Les champs scellés : jamais rendus, jamais journalisés.
 const SCELLES = { telegram: ['jeton'], cloudflare: ['jeton'] };

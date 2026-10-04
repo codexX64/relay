@@ -22,6 +22,7 @@ const S = {
   publication: { service: T(40, { requis: true, motif: NOM_SERVICE }), hote: T(253), sousDomaine: T(63, { motif: /^[a-z0-9-]{1,63}$/ }), cible: T(300, { requis: true }), mode: T(10, { parmi: [...MODES, 'cloudflare'] }), nom: T(60) },
   general: { domaines: { type: 'liste', max: 20, de: T(253, { motif: DOMAINE }) }, acme: T(254, { motif: /^([^\s@]+@[^\s@]+\.[^\s@]+)?$/ }), sondeSecondes: { type: 'entier', min: 5, max: 3600 } },
   telegram: { jeton: T(100, { motif: /^\d{5,15}:[A-Za-z0-9_-]{20,60}$/ }), retirerJeton: B, alertes: B, commandes: B, retirerChat: B },
+  cloudflareHub: { jeton: T(200, { requis: true, motif: /^[A-Za-z0-9_-]{20,200}$/ }) },
   cloudflare: { jeton: T(200, { motif: /^[A-Za-z0-9_-]{20,200}$/ }), retirerJeton: B, compte: T(64, { motif: /^[a-f0-9]{0,64}$/ }), nomCompte: T(120), tunnel: T(64, { motif: /^([0-9a-f-]{36})?$/ }), nomTunnel: T(120), actif: B },
   essaiCf: { jeton: T(200, { motif: /^[A-Za-z0-9_-]{20,200}$/ }) },
   apercu: { hote: T(253, { requis: true, motif: HOTE }) },
@@ -84,6 +85,26 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
   const corps = async (ctx, schema) => valider(await lireCorps(ctx.req, { limite: 32 * 1024 }), schema);
   const route = id => magasin.route(id) || (() => { throw new ErreurHttp(404, 'Route inconnue.'); })();
   const domaineDeBase = () => magasin.reglage('general').domaines[0] || '';
+
+  // Un jeton vérifié (les zones qu'il voit), scellé, puis Caddy et les
+  // enregistrements suivent. Le retirer rend les noms au certificat de Relay
+  // après avoir effacé les enregistrements qu'il avait écrits.
+  const connecterCf = async jeton => {
+    let zones;
+    // Un jeton refusé est une saisie à corriger (400) ; Cloudflare muet, une panne en amont (502).
+    try { zones = await cloudflare.zonesDuJeton(jeton); } catch (e) { throw Object.assign(new Error(e.message), { status: /injoignable/.test(e.message) ? 502 : 400 }); }
+    magasin.poserSecret('cloudflare', 'jeton', jeton);
+    magasin.poserReglage('cloudflare', { zones });
+    await relais.appliquer();
+    return { zones, enregistrements: await relais.synchroniserDomaines() };
+  };
+  const deconnecterCf = async () => {
+    const enregistrements = cloudflare.connecte() ? await relais.synchroniserDomaines({ retirer: true }) : { faits: [], erreurs: [] };
+    magasin.poserSecret('cloudflare', 'jeton', null);
+    magasin.poserReglage('cloudflare', { zones: [], actif: false });
+    await relais.appliquer();
+    return { ok: true, enregistrements };
+  };
 
   r.get('/api/health', () => ({ ok: true }), { public: true });
 
@@ -290,16 +311,29 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
     const s = session(ctx, { role: 'admin' });
     const b = await corps(ctx, S.cloudflare);
     if (b.jeton || b.retirerJeton || 'compte' in b || 'tunnel' in b) portail.exiger(ctx, { role: 'admin', renfort: true });
-    if (b.jeton) {
-      try { await cloudflare.decouvrir(b.jeton); } catch (e) { throw refusExterne(e.message); }
-      magasin.poserSecret('cloudflare', 'jeton', b.jeton);
-    }
-    if (b.retirerJeton) magasin.poserSecret('cloudflare', 'jeton', null);
     const { jeton, retirerJeton, ...reste } = b;
+    if (jeton) await connecterCf(jeton);
+    if (retirerJeton) await deconnecterCf();
     magasin.poserReglage('cloudflare', reste);
     journal.ecrire({ acteur: s.compte, action: 'reglages.cloudflare', objet: 'cloudflare', ip: ctx.ip, details: { ...reste, jeton: !!jeton, retirerJeton: !!retirerJeton } });
     return magasin.reglagePublic('cloudflare');
   }, { role: 'admin' });
+
+  // Le jeton Cloudflare depuis le Hub : écrit, jamais relu. Le Hub règle déjà
+  // tout Relay (il le déploie) : ce droit ne lui donne rien de plus.
+  r.put('/api/hub/cloudflare', async ctx => {
+    hub(ctx);
+    const b = await corps(ctx, S.cloudflareHub);
+    const out = await connecterCf(b.jeton);
+    journal.ecrire({ acteur: 'hub', action: 'cloudflare.connecte', objet: 'cloudflare', ip: ctx.ip, details: { zones: out.zones } });
+    return out;
+  }, { role: 'admin', jeton: true });
+  r.del('/api/hub/cloudflare', async ctx => {
+    hub(ctx);
+    const out = await deconnecterCf();
+    journal.ecrire({ acteur: 'hub', action: 'cloudflare.deconnecte', objet: 'cloudflare', ip: ctx.ip });
+    return out;
+  }, { role: 'admin', jeton: true });
 
   r.post('/api/cloudflare/essai', async ctx => {
     session(ctx, { role: 'admin' });
