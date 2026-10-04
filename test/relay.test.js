@@ -143,7 +143,7 @@ test('autorisation : sans session ni jeton, rien ; la lecture voit, n’écrit p
 test('publication par le Hub : idempotente, au domaine de base, jamais sur le nom d’un autre', async () => {
   let r = await hubReq('PUT', '/api/hub/publication', { service: 'mapmylan', sousDomaine: 'carte', cible: `127.0.0.1:${cible.address().port}` });
   assert.equal(r.status, 400, 'sans domaine de base, un sous-domaine ne suffit pas');
-  assert.equal((await admin.put('/api/reglages/general', { domaines: ['exemple.fr'] })).status, 200);
+  assert.equal((await hubReq('PUT', '/api/reglages/general', { domaines: ['exemple.fr'] })).status, 200, 'le Hub règle les domaines');
   r = await hubReq('PUT', '/api/hub/publication', { service: 'mapmylan', sousDomaine: 'carte', cible: `127.0.0.1:${cible.address().port}`, mode: 'local' });
   assert.equal(r.status, 200, JSON.stringify(r.json));
   assert.equal(r.json.url, 'https://carte.exemple.fr');

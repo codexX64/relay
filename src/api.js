@@ -238,14 +238,16 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
     };
   }, { role: 'admin' });
 
+  // Domaines de base, contact Let's Encrypt, cadence des sondes : la forme du
+  // routage, sans secret. Le Hub les règle aussi, depuis sa page Connexions.
   r.put('/api/reglages/general', async ctx => {
-    const s = session(ctx, { role: 'admin' });
+    const qui = surLesRoutes(ctx, 'admin');
     const b = await corps(ctx, S.general);
     const n = magasin.poserReglage('general', b);
-    journal.ecrire({ acteur: s.compte, action: 'reglages.general', objet: 'general', ip: ctx.ip, details: b });
+    tracer(ctx, qui, 'reglages.general', 'general', b);
     if ('acme' in b) relais.appliquer().catch(() => {});
     return n;
-  }, { role: 'admin' });
+  }, { role: 'admin', jeton: true });
 
   r.put('/api/reglages/telegram', async ctx => {
     const s = session(ctx, { role: 'admin' });
