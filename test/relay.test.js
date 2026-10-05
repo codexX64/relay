@@ -227,6 +227,14 @@ test('domaines chez Cloudflare depuis le Hub : jeton écrit jamais relu, nom loc
   assert.ok(!cf.dns.some(d => d.name === 'local.home.arpa'));
   await hubReq('DELETE', '/api/hub/publication?service=local');
 
+  // Caddy arrêté pendant la connexion : le jeton reste, l'appel le dit sans erreur 500.
+  caddy.refuser = 'atelier.exemple.fr';
+  r = await hubReq('PUT', '/api/hub/cloudflare', { jeton: 'cf-jeton-de-test-0123456789abcdef' });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.match(r.json.avertissement, /^Cloudflare est connecté, mais/);
+  caddy.refuser = null;
+  await relay.relais.appliquer();
+
   // Déconnecter : les enregistrements de Relay partent, les noms reviennent au certificat de Relay.
   r = await hubReq('DELETE', '/api/hub/cloudflare');
   assert.equal(r.status, 200);

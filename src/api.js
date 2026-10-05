@@ -95,15 +95,19 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
     try { zones = await cloudflare.zonesDuJeton(jeton); } catch (e) { throw Object.assign(new Error(e.message), { status: /injoignable/.test(e.message) ? 502 : 400 }); }
     magasin.poserSecret('cloudflare', 'jeton', jeton);
     magasin.poserReglage('cloudflare', { zones });
-    await relais.appliquer();
-    return { zones, enregistrements: await relais.synchroniserDomaines() };
+    // Le jeton est bon et enregistré : un Caddy arrêté ne l'annule pas, il
+    // recevra sa configuration au prochain tour. On le dit, sans erreur 500.
+    let avertissement = null;
+    try { await relais.appliquer(); } catch (e) { avertissement = `Cloudflare est connecté, mais ${e.message.charAt(0).toLowerCase()}${e.message.slice(1)} Les certificats viendront quand Caddy répondra.`; }
+    return { zones, enregistrements: await relais.synchroniserDomaines(), ...(avertissement ? { avertissement } : {}) };
   };
   const deconnecterCf = async () => {
     const enregistrements = cloudflare.connecte() ? await relais.synchroniserDomaines({ retirer: true }) : { faits: [], erreurs: [] };
     magasin.poserSecret('cloudflare', 'jeton', null);
     magasin.poserReglage('cloudflare', { zones: [], actif: false });
-    await relais.appliquer();
-    return { ok: true, enregistrements };
+    let avertissement = null;
+    try { await relais.appliquer(); } catch (e) { avertissement = e.message; }
+    return { ok: true, enregistrements, ...(avertissement ? { avertissement } : {}) };
   };
 
   r.get('/api/health', () => ({ ok: true }), { public: true });
