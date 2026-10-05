@@ -11,7 +11,7 @@ import path from 'node:path';
 import { Client } from '../socle/essai/client.js';
 import { adminComplet, membreInvite } from '../socle/essai/inscription.js';
 import { demarrer } from '../src/main.js';
-import { construire, lireCible } from '../src/caddy.js';
+import { construire, lireCible, Caddy } from '../src/caddy.js';
 import { normaliser } from '../src/relais.js';
 import { Cloudflare } from '../src/cloudflare.js';
 
@@ -87,6 +87,7 @@ let relay, port, admin, membre, cible, cibleMorte, ext;
 const hubReq = (methode, chemin, corps, jeton = JETON_HUB) => new Client(port).req(methode, chemin, corps, { entetes: { authorization: `Bearer ${jeton}` }, origine: null });
 
 before(async () => {
+  process.umask(0o077);   // comme en production (src/main.js)
   await new Promise(r => faux.listen(SOCKET, r));
   await new Promise(r => externe.listen(0, '127.0.0.1', r));
   ext = `http://127.0.0.1:${externe.address().port}`;
@@ -181,6 +182,7 @@ test('noms locaux : chaque nom servi et chaque domaine de base mènent à la mac
   const lire = () => fs.readFileSync(path.join(DNS, 'relay.hosts'), 'utf8');
   assert.equal((await hubReq('PUT', '/api/reglages/general', { domaines: ['mon-domaine.fr', 'exemple.fr'] })).status, 200);
   assert.match(lire(), /^192\.0\.2\.10 mon-domaine\.fr$/m, 'le domaine de base, aussitôt posé');
+  assert.equal(fs.statSync(path.join(DNS, 'relay.hosts')).mode & 0o777, 0o644, 'lisible par le résolveur, malgré le masque 077 du processus');
   const r = await hubReq('PUT', '/api/hub/publication', { service: 'carnet', sousDomaine: 'carnet', cible: `127.0.0.1:${cible.address().port}` });
   assert.equal(r.json.url, 'https://carnet.mon-domaine.fr');
   assert.match(lire(), /^192\.0\.2\.10 carnet\.mon-domaine\.fr$/m, 'un nom publié mène à la machine');
@@ -233,6 +235,13 @@ test('domaines chez Cloudflare depuis le Hub : jeton écrit jamais relu, nom loc
   assert.deepEqual((await hubReq('GET', '/api/etat')).json.zonesCloudflare, []);
   await hubReq('DELETE', '/api/hub/publication?service=atelier');
   cf.dns.splice(cf.dns.findIndex(d => d.id === 'dx'), 1);
+});
+
+test('Caddy arrêté : une panne en amont (502) dite en clair, et retenue dans l’état', async () => {
+  const mort = new Caddy({ socket: path.join(tmp, 'absent.sock') });
+  await assert.rejects(mort.charger({}), e => e.status === 502 && /Caddy est injoignable/.test(e.message));
+  assert.equal(mort.dernier.ok, false);
+  assert.match(mort.dernier.erreur, /injoignable/);
 });
 
 test('une écriture que Caddy refuse est défaite, et son message remonte tel quel', async () => {

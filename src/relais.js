@@ -59,7 +59,10 @@ export class Relais {
     try { if (fs.readFileSync(fichier, 'utf8') === texte) return false; } catch { /* pas encore écrit */ }
     // Un nom en point : le résolveur ignore ce fichier le temps de l'écriture.
     const neuf = path.join(this.dns.dossier, '.relay.hosts.neuf');
-    fs.writeFileSync(neuf, texte, { mode: 0o644 });
+    fs.writeFileSync(neuf, texte);
+    // Lisible par le résolveur (un autre utilisateur) : le masque du processus
+    // (077, posé par le socle) ne doit pas s'appliquer à ce fichier public.
+    fs.chmodSync(neuf, 0o644);
     fs.renameSync(neuf, fichier);
     return true;
   }
