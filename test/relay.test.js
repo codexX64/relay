@@ -92,7 +92,7 @@ before(async () => {
   await new Promise(r => externe.listen(0, '127.0.0.1', r));
   ext = `http://127.0.0.1:${externe.address().port}`;
   // Une cible qui répond, une qui ne répond pas.
-  cible = net.createServer(s => s.end()); await new Promise(r => cible.listen(0, '127.0.0.1', r));
+  cible = http.createServer((req, res) => { res.writeHead(req.headers.host === 'panne.exemple.fr' ? 502 : 200); res.end('ok'); }); await new Promise(r => cible.listen(0, '127.0.0.1', r));
   const t = net.createServer(); await new Promise(r => t.listen(0, '127.0.0.1', r)); cibleMorte = t.address().port; await new Promise(r => t.close(r));
   relay = await demarrer({
     DATA_DIR: path.join(tmp, 'data'), PORT: '0', HOTE: '127.0.0.1', RELAY_CADDY_SOCKET: SOCKET, RELAY_HUB_TOKEN: JETON_HUB,
@@ -250,6 +250,20 @@ test('Caddy arrêté : une panne en amont (502) dite en clair, et retenue dans l
   await assert.rejects(mort.charger({}), e => e.status === 502 && /Caddy est injoignable/.test(e.message));
   assert.equal(mort.dernier.ok, false);
   assert.match(mort.dernier.erreur, /injoignable/);
+});
+
+test('santé : la cible doit répondre en HTTP sans erreur serveur ; un port ouvert ne suffit pas', async () => {
+  const p = cible.address().port;
+  const ok = await relay.relais.sonde({ cible: `127.0.0.1:${p}`, hote: 'carte.exemple.fr' });
+  assert.equal(ok.ok, true); assert.equal(ok.code, 200);
+  const panne = await relay.relais.sonde({ cible: `127.0.0.1:${p}`, hote: 'panne.exemple.fr' });
+  assert.equal(panne.ok, false, 'une 502 n’est pas « en ligne »'); assert.equal(panne.code, 502);
+  const muet = net.createServer(s => s.end()); await new Promise(r => muet.listen(0, '127.0.0.1', r));
+  const ouvert = await relay.relais.sonde({ cible: `127.0.0.1:${muet.address().port}`, hote: 'x.exemple.fr' });
+  assert.equal(ouvert.ok, false, 'un port qui accepte puis ferme ne répond pas');
+  muet.close();
+  const ferme = await relay.relais.sonde({ cible: `127.0.0.1:${cibleMorte}`, hote: 'x.exemple.fr' });
+  assert.deepEqual([ferme.ok, ferme.erreur], [false, 'connexion refusée']);
 });
 
 test('une écriture que Caddy refuse est défaite, et son message remonte tel quel', async () => {

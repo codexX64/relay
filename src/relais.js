@@ -2,6 +2,8 @@
 // écriture que Caddy refuse est défaite, en base comme chez lui ; un refus de
 // Cloudflare n'empêche pas la route d'exister, il revient comme avertissement.
 import fs from 'node:fs';
+import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
 import path from 'node:path';
 import { construire, lireCible } from './caddy.js';
@@ -79,6 +81,8 @@ export class Relais {
     const attendu = this.configuration().apps.http.servers;
     const servi = await this.caddy.serveurs();
     if (canonique(servi || {}) !== canonique(attendu)) { await this.appliquer(); return true; }
+    // Caddy sert déjà exactement nos routes (repris après un redémarrage) : il est à jour.
+    if (!this.caddy.dernier.ok) this.caddy.dernier = { at: this.maintenant(), ok: true, erreur: null };
     return false;
   }
 
@@ -148,17 +152,24 @@ export class Relais {
     return { faits, erreurs };
   }
 
-  // ---- santé : une connexion TCP vers la cible, à chaque tour ----
+  // ---- santé : une requête HTTP vers la cible, à chaque tour ----
+  // Un port ouvert ne dit pas qu'un service marche : la cible doit répondre
+  // en HTTP, sans erreur serveur (5xx). Le nom demandé est celui de la route.
   sonde(route) {
     return new Promise(resolve => {
       const c = lireCible(route.cible);
       const t0 = this.maintenant();
-      const s = net.connect({ host: c.hote, port: c.port });
-      const fin = ok => { s.destroy(); resolve({ ok, ms: this.maintenant() - t0, at: this.maintenant() }); };
-      s.setTimeout(2500);
-      s.once('connect', () => fin(true));
-      s.once('timeout', () => fin(false));
-      s.once('error', () => fin(false));
+      const mod = c.schema === 'https' ? https : http;
+      let fini = false;
+      const fin = (ok, detail) => { if (fini) return; fini = true; resolve({ ok, ms: this.maintenant() - t0, at: this.maintenant(), ...detail }); };
+      const req = mod.request({
+        host: c.hote, port: c.port, method: 'GET', path: '/', timeout: 2500,
+        headers: { Host: route.enteteHote || route.hote, 'User-Agent': 'Relay-sonde' },
+        ...(c.schema === 'https' ? { rejectUnauthorized: !!route.verifier, servername: net.isIP(c.hote) ? undefined : c.hote } : {}),
+      }, res => { res.resume(); res.destroy(); fin(res.statusCode < 500, { code: res.statusCode }); });
+      req.on('timeout', () => { req.destroy(); fin(false, { erreur: 'délai dépassé' }); });
+      req.on('error', e => fin(false, { erreur: e.code === 'ECONNREFUSED' ? 'connexion refusée' : e.code === 'ENOTFOUND' || e.code === 'EAI_AGAIN' ? 'nom inconnu' : String(e.code || e.message).slice(0, 60) }));
+      req.end();
     });
   }
   async sonder(route) {
