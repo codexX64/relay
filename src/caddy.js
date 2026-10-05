@@ -86,7 +86,13 @@ export class Caddy {
         res.on('end', () => resolve({ status: res.statusCode, texte: Buffer.concat(morceaux).toString('utf8') }));
       });
       req.on('timeout', () => req.destroy(new Error('Caddy ne répond pas (délai dépassé).')));
-      req.on('error', e => reject(new Error(e.code === 'ENOENT' || e.code === 'ECONNREFUSED' ? 'Caddy est injoignable : son socket d’administration est absent.' : e.message)));
+      // Caddy arrêté ou muet : une panne en amont (502) dite en clair, et
+      // retenue pour l'état (« Caddy : injoignable » plutôt que « jamais appliquée »).
+      req.on('error', e => {
+        const message = e.code === 'ENOENT' || e.code === 'ECONNREFUSED' ? 'Caddy est injoignable : il ne tourne pas, ou son socket d’administration est absent.' : `Caddy : ${e.message}`;
+        this.dernier = { at: Date.now(), ok: false, erreur: message };
+        reject(Object.assign(new Error(message), { status: 502 }));
+      });
       if (donnees) req.write(donnees);
       req.end();
     });
