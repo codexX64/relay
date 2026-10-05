@@ -97,10 +97,13 @@ const telecharger = async (chemin, nom) => {
 };
 
 // ---------- routes ----------
-function tagSante(r) {
+// L'état tel qu'un navigateur le vivrait : nom servi par Caddy, cible qui répond en HTTP.
+function tagSante(r, caddy) {
   if (!r.actif) return h('span', { class: 'tag idle' }, h('i', { class: 'd' }), 'en pause');
+  if (caddy && !caddy.ok) return h('span', { class: 'tag held', title: caddy.erreur || '' }, h('i', { class: 'd' }), 'non servi');
   if (!r.sante) return h('span', { class: 'tag idle' }, h('i', { class: 'd' }), 'sonde à venir');
-  return r.sante.ok ? h('span', { class: 'tag' }, h('i', { class: 'd' }), `répond · ${r.sante.ms} ms`) : h('span', { class: 'tag held' }, h('i', { class: 'd' }), 'ne répond pas');
+  if (r.sante.ok) return h('span', { class: 'tag' }, h('i', { class: 'd' }), `en ligne · ${r.sante.ms} ms`);
+  return h('span', { class: 'tag held' }, h('i', { class: 'd' }), r.sante.code ? `cible : erreur ${r.sante.code}` : `cible : ${r.sante.erreur || 'injoignable'}`);
 }
 const proprietaireTexte = r => (r.proprietaire?.startsWith('hub:') ? `Hub · ${r.proprietaire.slice(4)}` : r.proprietaire?.startsWith('service:') ? r.proprietaire.slice(8) : 'à la main');
 
@@ -114,27 +117,28 @@ async function pageRoutes() {
   };
   peindre(e);
   const recharger = async () => peindre(await api.get('/api/etat'));
-  const caddy = e.caddy.ok ? `Caddy à jour depuis ${new Date(e.caddy.at).toLocaleTimeString('fr-FR')}` : `Caddy : ${e.caddy.erreur}`;
+  const caddy = e.caddy.ok ? `Caddy à jour depuis ${new Date(e.caddy.at).toLocaleTimeString('fr-FR')}` : 'Caddy en panne';
   return h('div', { class: 'page' },
     h('div', { class: 'headrow' },
       h('div', {}, h('h1', { class: 'title', text: 'Routes' }), h('p', { class: 'lede', text: 'Un nom, une machine. Chaque nom est servi en HTTPS — certificat de Relay sur le réseau local, Let’s Encrypt en public — ou derrière le tunnel Cloudflare.' })),
       h('div', { class: 'actions' },
         h('button', { class: 'btn', type: 'button', onclick: sur(() => telecharger('/api/autorite', 'relay-autorite.crt')) }, icone('telecharger', 15), 'Certificat local'),
         admin ? h('button', { class: 'btn solid', type: 'button', onclick: sur(() => formRoute(null, e, recharger)) }, icone('plus', 15), 'Nouvelle route') : null)),
-    h('div', { class: 'card' }, h('header', {}, h('h2', { text: 'Noms servis' }), h('span', { class: 'note ' + (e.caddy.ok ? '' : 'erreur'), text: caddy })), liste),
+    h('div', { class: 'card' }, h('header', {}, h('h2', { text: 'Noms servis' }), h('span', { class: 'note ' + (e.caddy.ok ? '' : 'erreur'), text: caddy })),
+      e.caddy.ok ? null : h('p', { class: 'erreur pad-erreur', role: 'alert', text: `Aucun nom n’est servi : ${e.caddy.erreur}` }), liste),
     h('p', { class: 'hint', text: 'Mode local : installe le « Certificat local » sur chaque poste pour que le navigateur fasse confiance aux noms servis par Relay.' }));
 
   function ligneRoute(r, st) {
     const acts = admin ? [
       { texte: 'Modifier', agir: () => formRoute(r, st, recharger) },
       { texte: r.actif ? 'Mettre en pause' : 'Reprendre', agir: async () => { await api.patch(`/api/routes/${r.id}`, { actif: !r.actif }); await recharger(); } },
-      { texte: 'Sonder', agir: async () => { const s = await api.post(`/api/routes/${r.id}/sonder`); toast(s.ok ? `${r.hote} répond (${s.ms} ms).` : `${r.hote} ne répond pas.`, !s.ok); await recharger(); } },
+      { texte: 'Sonder', agir: async () => { const s = await api.post(`/api/routes/${r.id}/sonder`); toast(s.ok ? `${r.cible} répond (${s.ms} ms).` : `${r.cible} : ${s.code ? `erreur ${s.code}` : s.erreur || 'injoignable'}.`, !s.ok); await recharger(); } },
       { texte: 'Supprimer', danger: true, agir: async () => { if (await confirmer(`Retirer ${r.hote} ?`, 'Le nom ne sera plus servi par Relay.', { danger: true, oui: 'Retirer' })) { const o = await api.del(`/api/routes/${r.id}`); if (o.avertissement) toast(o.avertissement, true); await recharger(); } } },
     ] : [];
     return h('div', { class: 'flowrow', 'data-donnee': '' },
       h('span', { class: 'itile ' + (r.actif && r.sante?.ok ? 'key' : '') }, icone(r.cf ? 'nuage' : 'globe')),
       h('div', { class: 'grow1 tronque' }, h('strong', { class: 'tronque', text: r.hote }), h('small', { class: 'tronque', text: `${r.cible} · ${r.cf ? 'tunnel Cloudflare' : MODE_COURT[r.mode]} · ${proprietaireTexte(r)}` })),
-      h('div', { class: 'fin' }, tagSante(r),
+      h('div', { class: 'fin' }, tagSante(r, st.caddy),
         acts.length ? h('button', { class: 'btn sm flat', type: 'button', 'aria-label': `Actions pour ${r.hote}`, onclick: sur(() => feuille(r.hote, acts.map(a => ({ ...a, agir: sur(a.agir) })))) }, icone('actions', 16)) : null));
   }
 }

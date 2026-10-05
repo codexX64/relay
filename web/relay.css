@@ -16,3 +16,4 @@ details>summary{cursor:pointer;color:var(--muted);font-size:13px;margin-top:4px}
 .saisie-domaine input{flex:1 1 40%;min-width:0}
 .saisie-domaine select{flex:0 1 auto;max-width:58%;min-width:0;text-overflow:ellipsis}
 .saisie-domaine .point{color:var(--muted);font-family:var(--mono, monospace)}
+.pad-erreur{margin:0;padding:12px 18px}
