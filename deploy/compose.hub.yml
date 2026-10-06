@@ -119,6 +119,30 @@ services:
       SOCLE_SMTP_DE: "{{config.SOCLE_SMTP_DE}}"
       TZ: "{{hub.tz}}"
 
+  # Le connecteur du tunnel Cloudflare : aucun conteneur tant que le Hub ne
+  # l'active (Connexions → Tunnel Cloudflare), qui pose alors son jeton. Il
+  # joint Caddy en clair sur le réseau du Hub ; Cloudflare porte le TLS.
+  tunnel:
+    image: cloudflare/cloudflared:{{config.CLOUDFLARED_TAG}}
+    restart: unless-stopped
+    networks: [hub]
+    deploy:
+      replicas: {{config.TUNNEL_ACTIF}}
+    command: ["tunnel", "--no-autoupdate", "run"]
+    environment:
+      TUNNEL_TOKEN: "{{config.TUNNEL_TOKEN}}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    cpus: 0.5
+    pids_limit: 64
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 networks:
   hub:
     name: {{hub.network}}

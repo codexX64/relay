@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "id": "relay",
   "name": "Relay",
-  "version": "2.1.2",
+  "version": "2.2.0",
   "description": "Un nom par service : domaines Cloudflare sans rien sur les appareils, home.arpa par son résolveur, tunnel, santé. Ajoute la page Connexions au Hub.",
   "icon": "globe",
   "repository": "https://github.com/CodexX64/relay",
@@ -70,7 +70,7 @@
       "key": "IMAGE_TAG",
       "label": "Version de l'image",
       "type": "string",
-      "default": "2.1.2",
+      "default": "2.2.0",
       "help": "Étiquette des images relay et relay-caddy.",
       "advanced": true
     },
@@ -107,6 +107,41 @@
       "default": "",
       "advanced": true,
       "help": "Contact des certificats publics (mode public). Facultative."
+    },
+    {
+      "key": "TUNNEL_ACTIF",
+      "label": "Connecteur du tunnel Cloudflare",
+      "type": "select",
+      "default": "0",
+      "required": true,
+      "options": [
+        {
+          "value": "0",
+          "label": "Arrêté"
+        },
+        {
+          "value": "1",
+          "label": "En marche"
+        }
+      ],
+      "help": "Réglé par le Hub (Connexions → Tunnel Cloudflare) : il lance cloudflared quand un tunnel est choisi.",
+      "advanced": true
+    },
+    {
+      "key": "TUNNEL_TOKEN",
+      "label": "Jeton du connecteur",
+      "type": "secret",
+      "help": "Posé par le Hub depuis Connexions → Tunnel Cloudflare. Il ne sert qu'à cloudflared.",
+      "advanced": true
+    },
+    {
+      "key": "CLOUDFLARED_TAG",
+      "label": "Version de cloudflared",
+      "type": "string",
+      "default": "2026.9.3",
+      "pattern": "^[0-9]{4}\\.[0-9]{1,2}\\.[0-9]{1,2}$",
+      "help": "Étiquette de l'image cloudflare/cloudflared du connecteur.",
+      "advanced": true
     },
     {
       "key": "HUB_TOKEN",
