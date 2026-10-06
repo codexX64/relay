@@ -124,16 +124,16 @@ export class Relais {
   async suivreCf(avant, apres) {
     const erreurs = [];
     const essai = async f => { try { await f(); } catch (e) { erreurs.push(e.message); } };
+    // L'enregistrement A d'une route locale part avant que le CNAME du tunnel
+    // ne prenne son nom : sinon le passage d'une route au tunnel bute dessus.
+    const ip = this.dns?.ip;
+    const local = r => !!r && r.actif && !r.cf && r.mode !== 'public' && !!this.cloudflare.zoneDe(r.hote);
+    if (this.cloudflare.connecte() && local(avant) && (!local(apres) || avant.hote !== apres.hote)) await essai(() => this.cloudflare.retirerLocal(avant.hote));
     if (this.cloudflare.actif()) {
       if (avant?.cf && (!apres?.cf || avant.hote !== apres.hote)) await essai(() => this.cloudflare.retirer(avant.hote));
       if (apres?.cf) await essai(() => this.cloudflare.publier(apres.hote));
     }
-    const ip = this.dns?.ip;
-    if (this.cloudflare.connecte() && ip) {
-      const local = r => !!r && r.actif && !r.cf && r.mode !== 'public' && !!this.cloudflare.zoneDe(r.hote);
-      if (local(avant) && (!local(apres) || avant.hote !== apres.hote)) await essai(() => this.cloudflare.retirerLocal(avant.hote));
-      if (local(apres)) await essai(() => this.cloudflare.poserLocal(apres.hote, ip));
-    }
+    if (this.cloudflare.connecte() && ip && local(apres)) await essai(() => this.cloudflare.poserLocal(apres.hote, ip));
     return erreurs.length ? erreurs.join(' ') : null;
   }
 
