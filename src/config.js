@@ -3,7 +3,7 @@
 // invalide arrête le processus avec la liste complète des erreurs.
 import { lireConfig } from '../socle/src/index.js';
 
-export const VERSION = '2.1.2';
+export const VERSION = '2.2.0';
 
 export function lireConfigRelay(env = process.env) {
   return lireConfig({
