@@ -45,7 +45,7 @@ const faux = http.createServer((req, res) => {
 });
 
 // ---- fausses API Cloudflare et Telegram ----
-const cf = { ingress: [{ hostname: 'autre.exemple.fr', service: 'http://ailleurs:80' }, { service: 'http_status:404' }], dns: [], ecritures: 0, n: 0 };
+const cf = { ingress: [{ hostname: 'autre.exemple.fr', service: 'http://ailleurs:80' }, { service: 'http_status:404' }], dns: [], ecritures: 0, n: 0, crees: [] };
 const tg = { messages: [], maj: [] };
 const externe = http.createServer((req, res) => {
   let corps = '';
@@ -62,12 +62,16 @@ const externe = http.createServer((req, res) => {
     if (req.headers.authorization !== 'Bearer cf-jeton-de-test-0123456789abcdef') { res.writeHead(403); return res.end('{"success":false,"errors":[{"code":9109,"message":"Invalid access token"}]}'); }
     if (u.pathname === '/cf/user/tokens/verify') return ok({ status: 'active' });
     if (u.pathname === '/cf/accounts') return ok([{ id: 'a1b2c3', name: 'Labo' }]);
-    if (u.pathname === '/cf/accounts/a1b2c3/cfd_tunnel') return ok([{ id: '11111111-2222-3333-4444-555555555555', name: 'maison' }]);
+    if (u.pathname === '/cf/accounts/a1b2c3/cfd_tunnel') {
+      if (req.method === 'POST') { const b = JSON.parse(corps); cf.crees.push(b); return ok({ id: '99999999-8888-7777-6666-555555555555', name: b.name }); }
+      return ok([{ id: '11111111-2222-3333-4444-555555555555', name: 'maison' }, ...cf.crees.map(b => ({ id: '99999999-8888-7777-6666-555555555555', name: b.name }))]);
+    }
+    if (/^\/cf\/accounts\/a1b2c3\/cfd_tunnel\/[0-9a-f-]{36}\/token$/.test(u.pathname)) return ok('eyJhIjoiYTFiMmMzIiwidCI6InR1bm5lbCJ9');
     if (u.pathname.endsWith('/configurations')) {
       if (req.method === 'PUT') { cf.ecritures++; cf.ingress = JSON.parse(corps).config.ingress; return ok({}); }
       return ok({ config: { ingress: cf.ingress } });
     }
-    if (u.pathname === '/cf/zones') return ok([{ id: 'z1', name: 'exemple.fr' }]);
+    if (u.pathname === '/cf/zones') return ok([{ id: 'z1', name: 'exemple.fr', account: { id: 'a1b2c3', name: 'Labo' } }]);
     if (u.pathname === '/cf/zones/z1/dns_records') {
       if (req.method === 'POST') { cf.dns.push({ id: `d${++cf.n}`, ...JSON.parse(corps) }); return ok({}); }
       return ok(cf.dns.filter(d => d.name === u.searchParams.get('name')));
@@ -243,6 +247,45 @@ test('domaines chez Cloudflare depuis le Hub : jeton écrit jamais relu, nom loc
   assert.deepEqual((await hubReq('GET', '/api/etat')).json.zonesCloudflare, []);
   await hubReq('DELETE', '/api/hub/publication?service=atelier');
   cf.dns.splice(cf.dns.findIndex(d => d.id === 'dx'), 1);
+});
+
+test('tunnel depuis le Hub : compte des zones, tunnel choisi ou créé, jeton du connecteur rendu au Hub, une route locale passe au tunnel', async () => {
+  assert.equal((await hubReq('PUT', '/api/hub/cloudflare/tunnel', { nom: 'hub-test' })).status, 409, 'sans jeton d’API, rien');
+  assert.deepEqual((await hubReq('GET', '/api/hub/cloudflare/tunnel')).json, { connecte: false, actif: false, tunnels: [] });
+  assert.equal((await hubReq('PUT', '/api/hub/cloudflare', { jeton: 'cf-jeton-de-test-0123456789abcdef' })).status, 200);
+  let r = await hubReq('GET', '/api/hub/cloudflare/tunnel');
+  assert.deepEqual([r.json.connecte, r.json.actif, r.json.compte.id, r.json.tunnels[0].nom], [true, false, 'a1b2c3', 'maison']);
+  assert.equal((await hubReq('PUT', '/api/hub/cloudflare/tunnel', {})).status, 400, 'ni tunnel ni nom');
+  assert.equal((await hubReq('PUT', '/api/hub/cloudflare/tunnel', { tunnel: '00000000-0000-0000-0000-000000000000' })).status, 404);
+  assert.ok([401, 403].includes((await new Client(port).req('PUT', '/api/hub/cloudflare/tunnel', { nom: 'x' }, { origine: null })).status), 'sans le jeton du Hub, rien');
+
+  // Une route locale d'abord : son enregistrement A mène à la machine.
+  r = await hubReq('PUT', '/api/hub/publication', { service: 'veille', hote: 'veille.exemple.fr', cible: `127.0.0.1:${cible.address().port}` });
+  assert.equal(cf.dns.find(d => d.name === 'veille.exemple.fr').type, 'A');
+
+  r = await hubReq('PUT', '/api/hub/cloudflare/tunnel', { nom: 'hub-test' });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.equal(cf.crees.length, 1, 'un tunnel créé');
+  assert.equal(cf.crees[0].config_src, 'cloudflare', 'géré par Cloudflare : son ingress se règle par l’API');
+  assert.ok(Buffer.from(cf.crees[0].tunnel_secret, 'base64').length === 32);
+  assert.deepEqual([r.json.tunnel.nom, r.json.jeton], ['hub-test', 'eyJhIjoiYTFiMmMzIiwidCI6InR1bm5lbCJ9']);
+  r = await hubReq('GET', '/api/hub/cloudflare/tunnel');
+  assert.deepEqual([r.json.actif, r.json.tunnel.nom], [true, 'hub-test']);
+  assert.ok(!JSON.stringify((await hubReq('GET', '/api/etat')).json).includes('eyJhIjoi'), 'le jeton du connecteur ne se relit pas');
+
+  // La route passe au tunnel : l'A part avant que le CNAME ne prenne le nom.
+  r = await hubReq('PUT', '/api/hub/publication', { service: 'veille', hote: 'veille.exemple.fr', cible: `127.0.0.1:${cible.address().port}`, mode: 'cloudflare' });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.ok(!r.json.avertissement, r.json.avertissement);
+  const recs = cf.dns.filter(d => d.name === 'veille.exemple.fr');
+  assert.deepEqual(recs.map(d => [d.type, d.content, d.proxied]), [['CNAME', '99999999-8888-7777-6666-555555555555.cfargotunnel.com', true]]);
+  assert.ok(cf.ingress.some(x => x.hostname === 'veille.exemple.fr'));
+
+  await hubReq('DELETE', '/api/hub/publication?service=veille');
+  assert.ok(!cf.dns.some(d => d.name === 'veille.exemple.fr'), 'retirée, son CNAME part');
+  assert.deepEqual((await hubReq('DELETE', '/api/hub/cloudflare/tunnel')).json, { actif: false });
+  assert.equal((await hubReq('GET', '/api/hub/cloudflare/tunnel')).json.actif, false);
+  await hubReq('DELETE', '/api/hub/cloudflare');
 });
 
 test('Caddy arrêté : une panne en amont (502) dite en clair, et retenue dans l’état', async () => {

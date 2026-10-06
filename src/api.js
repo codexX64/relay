@@ -23,6 +23,7 @@ const S = {
   general: { domaines: { type: 'liste', max: 20, de: T(253, { motif: DOMAINE }) }, acme: T(254, { motif: /^([^\s@]+@[^\s@]+\.[^\s@]+)?$/ }), sondeSecondes: { type: 'entier', min: 5, max: 3600 } },
   telegram: { jeton: T(100, { motif: /^\d{5,15}:[A-Za-z0-9_-]{20,60}$/ }), retirerJeton: B, alertes: B, commandes: B, retirerChat: B },
   cloudflareHub: { jeton: T(200, { requis: true, motif: /^[A-Za-z0-9_-]{20,200}$/ }) },
+  tunnelHub: { tunnel: T(36, { motif: /^[0-9a-f-]{36}$/ }), nom: T(60, { motif: /^[A-Za-z0-9][\w.-]{0,59}$/ }) },
   cloudflare: { jeton: T(200, { motif: /^[A-Za-z0-9_-]{20,200}$/ }), retirerJeton: B, compte: T(64, { motif: /^[a-f0-9]{0,64}$/ }), nomCompte: T(120), tunnel: T(64, { motif: /^([0-9a-f-]{36})?$/ }), nomTunnel: T(120), actif: B },
   essaiCf: { jeton: T(200, { motif: /^[A-Za-z0-9_-]{20,200}$/ }) },
   apercu: { hote: T(253, { requis: true, motif: HOTE }) },
@@ -337,6 +338,45 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
     const out = await deconnecterCf();
     journal.ecrire({ acteur: 'hub', action: 'cloudflare.deconnecte', objet: 'cloudflare', ip: ctx.ip });
     return out;
+  }, { role: 'admin', jeton: true });
+
+  // Le tunnel depuis le Hub : le compte est celui des zones connectées, le
+  // tunnel est choisi parmi les siens ou créé. Le jeton du connecteur revient
+  // au Hub, qui le scelle dans les réglages de Relay et lance cloudflared.
+  r.get('/api/hub/cloudflare/tunnel', async ctx => {
+    hub(ctx);
+    const c = cloudflare.reglage;
+    if (!cloudflare.connecte()) return { connecte: false, actif: false, tunnels: [] };
+    let compte = null, tunnels = [], erreur = null;
+    try {
+      compte = c.compte ? { id: c.compte, nom: c.nomCompte || '' } : await cloudflare.compteDesZones();
+      tunnels = await cloudflare.tunnelsDuCompte(compte.id);
+    } catch (e) { erreur = e.message; }
+    return { connecte: true, actif: cloudflare.actif(), compte, tunnel: c.tunnel ? { id: c.tunnel, nom: c.nomTunnel || '' } : null, tunnels, erreur };
+  }, { role: 'admin', jeton: true });
+  r.put('/api/hub/cloudflare/tunnel', async ctx => {
+    hub(ctx);
+    const b = await corps(ctx, S.tunnelHub);
+    if (!cloudflare.connecte()) throw new ErreurHttp(409, 'Connecte d’abord Cloudflare avec un jeton d’API.');
+    if (!b.tunnel === !b.nom) throw new ErreurHttp(400, 'Choisis un tunnel existant, ou donne le nom d’un nouveau.');
+    let compte, t, jeton;
+    try {
+      compte = await cloudflare.compteDesZones();
+      if (b.tunnel) {
+        t = (await cloudflare.tunnelsDuCompte(compte.id)).find(x => x.id === b.tunnel);
+        if (!t) throw new ErreurHttp(404, 'Ce tunnel n’existe pas dans le compte des zones connectées.');
+      } else t = await cloudflare.creerTunnel(compte.id, b.nom);
+      jeton = await cloudflare.jetonTunnel(compte.id, t.id);
+    } catch (e) { if (e instanceof ErreurHttp) throw e; throw refusExterne(e.message); }
+    magasin.poserReglage('cloudflare', { compte: compte.id, nomCompte: compte.nom, tunnel: t.id, nomTunnel: t.nom, actif: true });
+    journal.ecrire({ acteur: 'hub', action: 'cloudflare.tunnel', objet: t.nom, ip: ctx.ip, details: { tunnel: t.id, cree: !b.tunnel } });
+    return { compte, tunnel: t, jeton };
+  }, { role: 'admin', jeton: true });
+  r.del('/api/hub/cloudflare/tunnel', async ctx => {
+    hub(ctx);
+    magasin.poserReglage('cloudflare', { actif: false });
+    journal.ecrire({ acteur: 'hub', action: 'cloudflare.tunnel_coupe', objet: 'cloudflare', ip: ctx.ip });
+    return { actif: false };
   }, { role: 'admin', jeton: true });
 
   r.post('/api/cloudflare/essai', async ctx => {

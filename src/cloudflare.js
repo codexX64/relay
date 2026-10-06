@@ -7,6 +7,8 @@
 // Relay ne touche jamais un enregistrement qu'il n'a pas écrit (sa marque est
 // dans le commentaire), ni une entrée d'ingress d'un autre nom ; la règle de
 // repli reste telle quelle.
+import crypto from 'node:crypto';
+
 export const MARQUE = 'géré par Relay';
 
 export class Cloudflare {
@@ -54,6 +56,32 @@ export class Cloudflare {
       out.push({ id: a.id, nom: a.name, tunnels: tunnels.map(t => ({ id: t.id, nom: t.name })) });
     }
     return out;
+  }
+
+  // ---- le tunnel, réglé depuis le Hub ----
+  /** Le compte qui porte les zones connectées : celui où vivent le tunnel et ses noms. */
+  async compteDesZones() {
+    const zones = (await this.appel('/zones?per_page=50&status=active')) || [];
+    const z = zones.find(x => this.zones().includes(x.name)) || zones[0];
+    if (!z?.account?.id) throw new Error('Cloudflare : aucune zone active ne dit à quel compte elle appartient.');
+    return { id: z.account.id, nom: z.account.name || '' };
+  }
+  async tunnelsDuCompte(compte) {
+    const liste = (await this.appel(`/accounts/${encodeURIComponent(compte)}/cfd_tunnel?is_deleted=false&per_page=50`)) || [];
+    return liste.map(t => ({ id: t.id, nom: t.name }));
+  }
+  /** Un tunnel géré par Cloudflare (son ingress se règle par l'API, comme Relay le fait). */
+  async creerTunnel(compte, nom) {
+    const t = await this.appel(`/accounts/${encodeURIComponent(compte)}/cfd_tunnel`, {
+      method: 'POST', body: JSON.stringify({ name: nom, config_src: 'cloudflare', tunnel_secret: crypto.randomBytes(32).toString('base64') }),
+    });
+    return { id: t.id, nom: t.name };
+  }
+  /** Le jeton du connecteur (cloudflared) de ce tunnel. */
+  async jetonTunnel(compte, tunnel) {
+    const j = await this.appel(`/accounts/${encodeURIComponent(compte)}/cfd_tunnel/${encodeURIComponent(tunnel)}/token`);
+    if (typeof j !== 'string' || !/^[A-Za-z0-9+/=_-]{20,4096}$/.test(j)) throw new Error('Cloudflare n’a pas rendu de jeton pour ce tunnel.');
+    return j;
   }
 
   /** Le nom mène à la machine (A non proxifié) : seulement sur le réseau où elle est joignable. */
