@@ -136,7 +136,7 @@ async function pageRoutes() {
     ] : [];
     return h('div', { class: 'flowrow', 'data-donnee': '' },
       h('span', { class: 'itile ' + (r.actif && r.sante?.ok ? 'key' : '') }, icone(r.cf ? 'nuage' : 'globe')),
-      h('div', { class: 'grow1 tronque' }, h('strong', { class: 'tronque', text: r.hote }), h('small', { class: 'tronque', text: `${r.cible} · ${r.cf ? 'tunnel Cloudflare' : MODE_COURT[r.mode]} · ${proprietaireTexte(r)}` })),
+      h('div', { class: 'grow1 tronque' }, h('strong', { class: 'tronque', text: r.hote }), h('small', { class: 'tronque', text: `${r.cible}${/^https:/i.test(r.cible) && !r.verifier ? ' (certificat non vérifié)' : ''} · ${r.cf ? 'tunnel Cloudflare' : MODE_COURT[r.mode]} · ${proprietaireTexte(r)}` })),
       h('div', { class: 'fin' }, tagSante(r, st.caddy),
         acts.length ? h('button', { class: 'btn sm flat', type: 'button', 'aria-label': `Actions pour ${r.hote}`, onclick: sur(() => feuille(r.hote, acts.map(a => ({ ...a, agir: sur(a.agir) })))) }, icone('actions', 16)) : null));
   }
