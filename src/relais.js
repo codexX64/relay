@@ -34,6 +34,24 @@ export function normaliser(e, base = {}) {
   return r;
 }
 
+/**
+ * Une cible qu'un service raccordé ne peut pas donner : la boucle locale, une
+ * adresse non spécifiée ou de lien local (métadonnées d'un hébergeur), et toute
+ * écriture d'adresse non canonique qu'un résolveur lirait comme l'une d'elles.
+ * Rien de cela n'est son service : ce serait le relais ou sa machine.
+ */
+export function cibleInterdite(cible) {
+  const h = lireCible(cible).hote.toLowerCase().replace(/\.$/, '');
+  if (h === 'localhost' || h.endsWith('.localhost')) return true;
+  if (/^0x/i.test(h) || /\.0x/i.test(h)) return true;
+  if (/^[\d.]+$/.test(h)) {
+    if (!net.isIPv4(h) || h.split('.').some(o => o.length > 1 && o.startsWith('0'))) return true;
+    const [a, b] = h.split('.').map(Number);
+    return a === 127 || a === 0 || (a === 169 && b === 254);
+  }
+  return false;
+}
+
 export class Relais {
   // dns : { dossier, ip } — le dossier que lit le résolveur de Relay, et l'adresse de la machine.
   constructor({ magasin, caddy, cloudflare, socket, journal, dns = null, alerter = () => {}, maintenant = () => Date.now() }) {

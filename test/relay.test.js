@@ -370,11 +370,18 @@ test('services raccordés : jeton montré une fois, portée « soi » bornée à
   assert.match(jeton, /^svc_/);
   assert.equal((await admin.get('/api/clients')).json.clients[0].jeton, undefined, 'seule l’empreinte reste');
   const svc = (m, ch, b) => new Client(port).req(m, ch, b, { entetes: { 'x-relay-key': jeton }, origine: null });
-  let r = await svc('POST', '/api/register', { subdomain: 'plan', upstream: `127.0.0.1:${cible.address().port}`, mode: 'local' });
+  for (const upstream of ['127.0.0.1:8095', 'localhost:2019', '169.254.169.254:80', '0.0.0.0:80', '127.1:80', '0x7f000001:80', '2130706433:80', 'https://LOCALHOST:443']) {
+    assert.equal((await svc('POST', '/api/register', { subdomain: 'plan', upstream, mode: 'local' })).status, 400, upstream);
+  }
+  assert.ok(!relay.magasin.routeParHote('plan.exemple.fr'), 'rien de posé');
+  let r = await svc('POST', '/api/register', { subdomain: 'plan', upstream: '192.0.2.20:8090', mode: 'local' });
   assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.ok(relay.db.prepare("SELECT details FROM socle_journal WHERE action = 'register.cree' ORDER BY n DESC").get().details.includes('192.0.2.20:8090'), 'la cible est au journal');
   assert.deepEqual([r.json.created, r.json.url, r.json.route.tls], [true, 'https://plan.exemple.fr', 'internal']);
-  r = await svc('POST', '/api/register', { subdomain: 'plan', upstream: `127.0.0.1:${cible.address().port}`, mode: 'local' });
+  r = await svc('POST', '/api/register', { subdomain: 'plan', upstream: '192.0.2.20:8090', mode: 'local' });
   assert.equal(r.json.updated, true);
+  assert.equal((await svc('POST', '/api/register', { subdomain: 'plan', upstream: '127.0.0.1:8095', mode: 'local' })).status, 400, 'pas plus en mise à jour');
+  assert.equal(relay.magasin.routeParHote('plan.exemple.fr').cible, '192.0.2.20:8090');
   assert.equal((await svc('POST', '/api/register', { host: 'carte.exemple.fr', upstream: 'x:80' })).status, 409, 'le nom d’un autre');
   assert.equal((await svc('GET', '/api/whoami')).json.routes.length, 1);
   assert.equal((await svc('GET', '/api/etat')).status, 403, 'portée « soi » : pas les autres routes');
@@ -544,5 +551,11 @@ test('autorisation : un jeton « routes » gère les routes, ni les réglages ni
     else assert.ok([401, 403].includes(s.status), `${r.methode} ${chemin} avec un jeton « routes » → ${s.status}`);
   }
   assert.equal((await svc('PUT', '/api/reglages/general', { domaines: ['ailleurs.fr'] })).status, 403);
+  assert.equal((await svc('POST', '/api/routes', { hote: 'meta.exemple.fr', cible: '169.254.169.254:80' })).status, 400, 'pas la machine non plus');
+  const r = await svc('POST', '/api/routes', { hote: 'geree.exemple.fr', cible: 'hub-geree:80' });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.equal((await svc('PATCH', `/api/routes/${r.json.route.id}`, { cible: '127.0.0.1:8095' })).status, 400);
+  assert.equal((await admin.patch(`/api/routes/${r.json.route.id}`, { cible: '127.0.0.1:8095' })).status, 200, 'l’administrateur, lui, choisit');
+  await admin.del(`/api/routes/${r.json.route.id}`);
   assert.deepEqual(relay.magasin.reglage('general').domaines, ['exemple.fr'], 'les domaines de base ne bougent pas');
 });

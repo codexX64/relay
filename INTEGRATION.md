@@ -153,6 +153,7 @@ already registered?" check; Relay answers that question correctly on its own.
 | Status | Body | What to do |
 |---|---|---|
 | `400` | `Champ « upstream » : obligatoire.` | Fill the field |
+| `400` | `Cible refusée à un jeton de service : boucle locale, adresse non spécifiée ou de lien local.` | `upstream` is `localhost`, `127.x`, `0.x`, `169.254.x` or a non-canonical spelling of one: give the address the Relay host reaches your service at |
 | `400` | `Give host, or subdomain with a base domain configured.` | Send a full `host`, or ask the operator to set a base domain in Relay → Réglages → Général |
 | `401` | `Jeton invalide.` | The token is wrong or revoked |
 | `403` | `Un jeton de service est exigé ici.` | No token was sent |

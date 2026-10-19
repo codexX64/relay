@@ -8,6 +8,7 @@
 //     toutes les routes (« routes ») pour un gestionnaire de conteneurs.
 import { ErreurHttp, Routeur, lireCorps, valider, egal, repondreJson } from '../socle/src/index.js';
 import { REF, HOTE, MODES } from './base.js';
+import { cibleInterdite } from './relais.js';
 
 const T = (max, o = {}) => ({ type: 'chaine', max, ...o });
 const B = { type: 'booleen' };
@@ -80,6 +81,12 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
     if (a?.type === 'client') throw new ErreurHttp(403, 'Un jeton de service ne règle ni Relay ni Cloudflare.');
     return surLesRoutes(ctx, role);
   };
+  // Un jeton de service publie un service : jamais le relais lui-même ni sa machine.
+  const cibleDeService = (qui, cible) => {
+    if (qui.type === 'client' && cible !== undefined && cibleInterdite(cible)) {
+      throw new ErreurHttp(400, 'Cible refusée à un jeton de service : boucle locale, adresse non spécifiée ou de lien local.');
+    }
+  };
   const service = ctx => {
     const a = appelant(ctx);
     if (a?.type !== 'client') throw new ErreurHttp(403, 'Un jeton de service est exigé ici.');
@@ -129,6 +136,7 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
   r.post('/api/routes', async ctx => {
     const qui = surLesRoutes(ctx, 'admin');
     const b = await corps(ctx, S.route);
+    cibleDeService(qui, b.cible);
     const out = await relais.creer(b, { proprietaire: qui.type === 'session' ? null : qui.type === 'hub' ? 'hub' : `service:${qui.nom}` });
     tracer(ctx, qui, 'route.creee', out.route.hote, { cible: out.route.cible, mode: out.route.mode, cf: out.route.cf });
     return out;
@@ -137,6 +145,7 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
   r.patch('/api/routes/:id', async ctx => {
     const qui = surLesRoutes(ctx, 'admin');
     const b = await corps(ctx, S.routeModif);
+    cibleDeService(qui, b.cible);
     const out = await relais.modifier(route(ctx.params.id).id, b);
     tracer(ctx, qui, 'route.modifiee', out.route.hote, b);
     return out;
@@ -248,6 +257,7 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
   r.post('/api/register', async ctx => {
     const c = service(ctx);
     const b = await corps(ctx, S.register);
+    cibleDeService({ type: 'client' }, b.upstream);
     const base = domaineDeBase();
     const hote = String(b.host || (b.subdomain && base ? `${b.subdomain}.${base}` : '')).toLowerCase();
     if (!hote) throw new ErreurHttp(400, 'Give host, or subdomain with a base domain configured.');
@@ -256,7 +266,7 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
     const mienne = magasin.routes().find(x => x.client === c.id && x.hote === hote);
     if (!mienne && magasin.routeParHote(hote)) throw new ErreurHttp(409, `${hote} is already routed by another service.`);
     const out = mienne ? await relais.modifier(mienne.id, champs) : await relais.creer({ hote, ...champs }, { proprietaire: `service:${c.nom}`, client: c.id });
-    journal.ecrire({ acteur: `service:${c.nom}`, action: mienne ? 'register.maj' : 'register.cree', objet: hote, ip: ctx.ip });
+    journal.ecrire({ acteur: `service:${c.nom}`, action: mienne ? 'register.maj' : 'register.cree', objet: hote, ip: ctx.ip, details: { cible: out.route.cible, mode: out.route.mode, cf: out.route.cf } });
     return { ok: true, [mienne ? 'updated' : 'created']: true, url: `https://${hote}`, route: route1x(out.route), warning: out.avertissement || null };
   }, { jeton: true, public: true });
   r.del('/api/register', async ctx => {
