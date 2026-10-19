@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 
 const esc = t => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const MODE = { public: 'public', local: 'local', clair: 'sans TLS' };
+const ESSAIS_LIAISON = 5;
 const AIDE = [
   '<b>Relay</b>',
   '/etat — ce qui répond en ce moment',
@@ -55,7 +56,7 @@ export class Telegram {
   alerte(texte) { if (this.reglage.alertes) this.envoyer(texte).catch(() => {}); }
 
   lier() {
-    this.liaison = { code: String(crypto.randomInt(0, 1e6)).padStart(6, '0'), expire: Date.now() + 10 * 60e3 };
+    this.liaison = { code: String(crypto.randomInt(0, 1e6)).padStart(6, '0'), expire: Date.now() + 10 * 60e3, essais: 0 };
     this.demarrer(true);
     return this.liaison;
   }
@@ -93,12 +94,19 @@ export class Telegram {
     const lie = this.reglage.chat;
     if (!lie || chat !== String(lie)) {
       const m = /^\/lier\s+(\d{6})$/.exec(texte) || /^\/link\s+(\d{6})$/.exec(texte);
-      if (m && this.liaison && this.liaison.expire > Date.now() && crypto.timingSafeEqual(Buffer.from(m[1]), Buffer.from(this.liaison.code))) {
-        this.magasin.poserReglage('telegram', { chat });
-        this.liaison = null;
-        this.journal?.ecrire({ acteur: 'système', action: 'telegram.lie', objet: 'chat', resultat: 'succes' });
-        await this.envoyer('✅ <b>Relay</b> — ce chat est lié. /aide pour les commandes.', chat);
+      if (!m || !this.liaison || this.liaison.expire <= Date.now()) return;
+      // Le nom du bot est public : cinq codes faux, et le code affiché ne vaut plus rien.
+      if (!crypto.timingSafeEqual(Buffer.from(m[1]), Buffer.from(this.liaison.code))) {
+        if (++this.liaison.essais >= ESSAIS_LIAISON) {
+          this.liaison = null;
+          this.journal?.ecrire({ acteur: 'système', action: 'telegram.liaison_annulee', objet: 'chat', resultat: 'refus', details: { essais: ESSAIS_LIAISON } });
+        }
+        return;
       }
+      this.magasin.poserReglage('telegram', { chat });
+      this.liaison = null;
+      this.journal?.ecrire({ acteur: 'système', action: 'telegram.lie', objet: 'chat', resultat: 'succes' });
+      await this.envoyer('✅ <b>Relay</b> — ce chat est lié. /aide pour les commandes.', chat);
       return;
     }
     if (this.reglage.commandes) await this.commande(texte);

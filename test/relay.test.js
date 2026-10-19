@@ -356,6 +356,18 @@ test('Telegram : un chat se lie par le code affiché, un autre code ne lie rien'
   assert.equal(relay.magasin.reglage('telegram').chat, '');
   await relay.telegram.recevoir('77', `/lier ${o.json.code}`);
   assert.equal(relay.magasin.reglage('telegram').chat, '77');
+  // Cinq codes faux, d'où qu'ils viennent : le code affiché ne lie plus rien.
+  relay.magasin.poserReglage('telegram', { chat: '' });
+  const l = await admin.post('/api/telegram/lier');
+  const faux = String((Number(l.json.code) + 1) % 1e6).padStart(6, '0');
+  for (let i = 0; i < 5; i++) await relay.telegram.recevoir(String(500 + i), `/lier ${faux}`);
+  await relay.telegram.recevoir('66', `/lier ${l.json.code}`);
+  assert.equal(relay.magasin.reglage('telegram').chat, '', 'le bon code arrive trop tard');
+  assert.ok(relay.db.prepare("SELECT 1 FROM socle_journal WHERE action = 'telegram.liaison_annulee'").get());
+  const l2 = await admin.post('/api/telegram/lier');
+  for (let i = 0; i < 4; i++) await relay.telegram.recevoir('501', '/lier abcdef');
+  await relay.telegram.recevoir('66', `/lier ${l2.json.code}`);
+  assert.equal(relay.magasin.reglage('telegram').chat, '66', 'un nouveau code repart de zéro');
   relay.telegram.arreter();
   delete relay.socle.comptes.estRenforcee;
 });
