@@ -528,3 +528,21 @@ test('autorisation : chaque route balayée sans session, en lecture seule, et av
     }
   }
 });
+
+test('autorisation : un jeton « routes » gère les routes, ni les réglages ni Cloudflare', async () => {
+  relay.socle.comptes.estRenforcee = () => true;
+  const c = await admin.post('/api/clients', { nom: 'gestionnaire', portee: 'routes' });
+  delete relay.socle.comptes.estRenforcee;
+  const svc = (m, ch, b) => new Client(port).req(m, ch, b, { entetes: { 'x-relay-key': c.json.jeton }, origine: null });
+  const PERMIS = new Set(['GET /api/etat', 'POST /api/routes', 'PATCH /api/routes/AAAAAAAAAAAA', 'DELETE /api/routes/AAAAAAAAAAAA',
+    'POST /api/routes/AAAAAAAAAAAA/sonder', 'POST /api/appliquer', 'GET /api/autorite', 'GET /api/whoami', 'POST /api/heartbeat', 'POST /api/register', 'DELETE /api/register']);
+  for (const r of relay.api.routeur.routes) {
+    const chemin = r.re.source.slice(1, -1).replace(/\\\//g, '/').replace('([^/]+)', 'AAAAAAAAAAAA');
+    if (r.options.public && chemin === '/api/health') continue;
+    const s = await svc(r.methode, chemin, r.methode === 'GET' || r.methode === 'DELETE' ? undefined : {});
+    if (PERMIS.has(`${r.methode} ${chemin}`)) assert.ok(![401, 403].includes(s.status), `${r.methode} ${chemin} → ${s.status}`);
+    else assert.ok([401, 403].includes(s.status), `${r.methode} ${chemin} avec un jeton « routes » → ${s.status}`);
+  }
+  assert.equal((await svc('PUT', '/api/reglages/general', { domaines: ['ailleurs.fr'] })).status, 403);
+  assert.deepEqual(relay.magasin.reglage('general').domaines, ['exemple.fr'], 'les domaines de base ne bougent pas');
+});

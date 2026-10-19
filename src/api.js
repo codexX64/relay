@@ -73,6 +73,12 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
     const s = session(ctx, { role });
     return { type: 'session', nom: s.compteLigne.identifiant, compte: s.compte };
   };
+  // Les réglages et Cloudflare : le Hub ou une session, jamais un jeton de service (INTEGRATION.md, § 2).
+  const horsServices = (ctx, role) => {
+    const a = appelant(ctx);
+    if (a?.type === 'client') throw new ErreurHttp(403, 'Un jeton de service ne règle ni Relay ni Cloudflare.');
+    return surLesRoutes(ctx, role);
+  };
   const service = ctx => {
     const a = appelant(ctx);
     if (a?.type !== 'client') throw new ErreurHttp(403, 'Un jeton de service est exigé ici.');
@@ -275,7 +281,7 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
   // Domaines de base, contact Let's Encrypt, cadence des sondes : la forme du
   // routage, sans secret. Le Hub les règle aussi, depuis sa page Connexions.
   r.put('/api/reglages/general', async ctx => {
-    const qui = surLesRoutes(ctx, 'admin');
+    const qui = horsServices(ctx, 'admin');
     const b = await corps(ctx, S.general);
     const n = magasin.poserReglage('general', b);
     tracer(ctx, qui, 'reglages.general', 'general', b);
@@ -394,13 +400,13 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
   }, { role: 'admin' });
 
   r.post('/api/cloudflare/apercu', async ctx => {
-    surLesRoutes(ctx, 'admin');
+    horsServices(ctx, 'admin');
     const b = await corps(ctx, S.apercu);
     try { return await cloudflare.ingress(b.hote, true, { apercu: true }); } catch (e) { throw refusExterne(e.message); }
   }, { role: 'admin', jeton: true });
 
   r.post('/api/cloudflare/synchroniser', async ctx => {
-    const qui = surLesRoutes(ctx, 'admin');
+    const qui = horsServices(ctx, 'admin');
     await corps(ctx, {});
     if (!cloudflare.actif()) throw new ErreurHttp(409, 'Cloudflare Tunnel n’est pas activé.');
     const faits = [], erreurs = [];
