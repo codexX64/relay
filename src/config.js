@@ -17,7 +17,8 @@ export function lireConfigRelay(env = process.env) {
     // Caddy en clair sur le port 80 du réseau Docker).
     caddyService: { env: 'RELAY_CADDY_SERVICE', type: 'chaine', motif: /^https?:\/\/[A-Za-z0-9.-]+(:\d+)?$/, defaut: 'http://relay-caddy:80' },
     // Jeton du Hub : toutes les routes (publier les services qu'il installe),
-    // jamais les comptes, les jetons de services ni les réglages.
+    // les domaines de base et Cloudflare ; jamais les comptes, les jetons de
+    // services ni Telegram (src/api.js).
     jetonHub: { env: 'RELAY_HUB_TOKEN', type: 'secret', min: 24 },
     // Adresse de la machine, pour les noms locaux (.lan) et la sonde.
     ip: { env: 'RELAY_IP', type: 'chaine', motif: /^(\d{1,3}\.){3}\d{1,3}$/ },

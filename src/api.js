@@ -1,8 +1,9 @@
 // Routes de Relay. Trois sortes d'appelants, chacun borné :
 //   - une session du socle (l'interface de Relay) : lecture pour voir, admin
 //     pour changer ce qui est exposé ; les jetons et les secrets sous renfort ;
-//   - le Hub, par son jeton : toutes les routes, et la publication des
-//     services qu'il installe — jamais les jetons de services ni les réglages ;
+//   - le Hub, par son jeton : toutes les routes, la publication des services
+//     qu'il installe, les domaines de base et Cloudflare (le jeton d'API écrit,
+//     jamais relu) — jamais les comptes, les jetons de services ni Telegram ;
 //   - un service raccordé, par le sien : ses propres routes (« soi »), ou
 //     toutes les routes (« routes ») pour un gestionnaire de conteneurs.
 import { ErreurHttp, Routeur, lireCorps, valider, egal, repondreJson } from '../socle/src/index.js';

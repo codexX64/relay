@@ -96,8 +96,8 @@ services:
       RELAY_CADDY_SOCKET: /run/caddy/admin.sock
       # cloudflared joint Caddy en clair sur le réseau du Hub.
       RELAY_CADDY_SERVICE: "http://{{service.host}}-caddy:80"
-      # Jeton du Hub : les routes et la publication des services, jamais les
-      # comptes, les jetons de services ni les réglages.
+      # Jeton du Hub : les routes, la publication des services, les domaines
+      # de base et Cloudflare ; jamais les comptes, les jetons de services ni Telegram.
       RELAY_HUB_TOKEN: "{{config.HUB_TOKEN}}"
       RELAY_IP: "{{config.RELAY_IP}}"
       RELAY_DNS_DIR: /run/dns

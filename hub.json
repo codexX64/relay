@@ -148,7 +148,7 @@
       "label": "Jeton du Hub",
       "type": "secret",
       "generate": "random:32",
-      "help": "Créé par le Hub. Il lui ouvre les routes de Relay (page Connexions, publication des services) — jamais les comptes, les jetons de services ni les réglages."
+      "help": "Créé par le Hub. Il lui ouvre les routes de Relay (page Connexions, publication des services), les domaines de base et Cloudflare — jamais les comptes, les jetons de services ni Telegram."
     },
     {
       "key": "HUB_ADMIN_TOKEN",
