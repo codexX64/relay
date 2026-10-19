@@ -5,8 +5,8 @@
 //  - le tunnel : pour chaque route cochée, l'entrée d'ingress et le CNAME
 //    proxifié vers <tunnel>.cfargotunnel.com.
 // Relay ne touche jamais un enregistrement qu'il n'a pas écrit (sa marque est
-// dans le commentaire), ni une entrée d'ingress d'un autre nom ; la règle de
-// repli reste telle quelle.
+// dans le commentaire, ou il mène à son tunnel), ni une entrée d'ingress d'un
+// autre nom ou qui mène ailleurs que chez Caddy ; la règle de repli reste telle quelle.
 import crypto from 'node:crypto';
 
 export const MARQUE = 'géré par Relay';
@@ -122,6 +122,10 @@ export class Cloudflare {
     const chemin = `/accounts/${encodeURIComponent(c.compte)}/cfd_tunnel/${encodeURIComponent(c.tunnel)}/configurations`;
     const conf = (await this.appel(chemin)) || {};
     const avant = conf.config?.ingress || [];
+    // L'entrée de ce nom qui mène ailleurs que chez Caddy a été posée par un autre : ni prise ni retirée.
+    const tenue = avant.find(r => r.hostname === hote && r.service !== this.service);
+    if (tenue && garder) throw new Error(`${hote} a déjà une entrée dans le tunnel, vers ${tenue.service} : Relay ne la remplace pas.`);
+    if (tenue) return { avant, apres: avant, couvert: null };
     const couvert = Cloudflare.joker(avant, hote);
     if (couvert && !avant.some(r => r.hostname === hote)) return { avant, apres: avant, couvert: couvert.hostname };
     const autres = avant.filter(r => r.hostname && r.hostname !== hote);
@@ -136,11 +140,12 @@ export class Cloudflare {
     const z = await this.zone(hote);
     const cible = `${this.reglage.tunnel}.cfargotunnel.com`;
     const recs = (await this.appel(`/zones/${z.id}/dns_records?name=${encodeURIComponent(hote)}`)) || [];
-    const corps = JSON.stringify({ type: 'CNAME', name: hote, content: cible, proxied: true, ttl: 1 });
+    const corps = JSON.stringify({ type: 'CNAME', name: hote, content: cible, proxied: true, ttl: 1, comment: MARQUE });
     const trouve = recs[0];
     if (!trouve) await this.appel(`/zones/${z.id}/dns_records`, { method: 'POST', body: corps });
     else if (trouve.content !== cible || !trouve.proxied) {
-      if (trouve.type !== 'CNAME' || !String(trouve.content || '').endsWith('.cfargotunnel.com')) {
+      // Vers ce tunnel, ou écrit par Relay (un tunnel remplacé) : le sien. Vers un autre tunnel, ou autre chose : pas à lui.
+      if (trouve.type !== 'CNAME' || (trouve.content !== cible && trouve.comment !== MARQUE)) {
         throw new Error(`${hote} a déjà un enregistrement ${trouve.type} vers ${trouve.content} : Relay ne le remplace pas.`);
       }
       await this.appel(`/zones/${z.id}/dns_records/${trouve.id}`, { method: 'PUT', body: corps });
@@ -152,8 +157,8 @@ export class Cloudflare {
     await this.ingress(hote, false);
     const z = await this.zone(hote);
     const recs = (await this.appel(`/zones/${z.id}/dns_records?name=${encodeURIComponent(hote)}`)) || [];
-    const trouve = recs[0];
-    if (trouve && String(trouve.content || '').endsWith('.cfargotunnel.com')) await this.appel(`/zones/${z.id}/dns_records/${trouve.id}`, { method: 'DELETE' });
+    const cible = `${this.reglage.tunnel}.cfargotunnel.com`;
+    for (const x of recs.filter(r => r.type === 'CNAME' && (r.content === cible || r.comment === MARQUE))) await this.appel(`/zones/${z.id}/dns_records/${x.id}`, { method: 'DELETE' });
     return { hote };
   }
 }

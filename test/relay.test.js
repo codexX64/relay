@@ -402,7 +402,7 @@ test('Cloudflare : jeton vérifié puis scellé, ingress et CNAME posés pour un
   assert.deepEqual(cf.ingress.map(x => x.hostname || x.service), ['autre.exemple.fr', 'public.exemple.fr', 'http_status:404'], 'l’entrée d’un autre et le repli sont gardés');
   assert.equal(cf.ingress[1].service, 'http://relay-caddy:80');
   const { id: _id, ...cname } = cf.dns.find(d => d.name === 'public.exemple.fr');
-  assert.deepEqual(cname, { type: 'CNAME', name: 'public.exemple.fr', content: '11111111-2222-3333-4444-555555555555.cfargotunnel.com', proxied: true, ttl: 1 });
+  assert.deepEqual(cname, { type: 'CNAME', name: 'public.exemple.fr', content: '11111111-2222-3333-4444-555555555555.cfargotunnel.com', proxied: true, ttl: 1, comment: 'géré par Relay' });
   // Un enregistrement qui n'est pas un tunnel n'est jamais remplacé.
   cf.dns.push({ type: 'A', name: 'site.exemple.fr', content: '198.51.100.7' });
   r = await admin.post('/api/routes', { hote: 'site.exemple.fr', cible: 'hub-x:80', mode: 'clair', cf: true });
@@ -412,6 +412,30 @@ test('Cloudflare : jeton vérifié puis scellé, ingress et CNAME posés pour un
   const ecritures = cf.ecritures;
   assert.equal(ap.json.apres.length, ap.json.avant.length + 1);
   assert.equal(cf.ecritures, ecritures, 'l’aperçu n’écrit rien');
+  delete relay.socle.comptes.estRenforcee;
+});
+
+test('Cloudflare : le nom qu’un autre tient dans le tunnel ou le DNS n’est ni pris ni retiré', async () => {
+  relay.socle.comptes.estRenforcee = () => true;
+  const ingress = cf.ingress.length;
+  cf.ingress.splice(-1, 0, { hostname: 'tenu.exemple.fr', service: 'https://192.0.2.40:8443' });
+  cf.dns.push({ id: 'autre1', type: 'CNAME', name: 'tenu.exemple.fr', content: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.cfargotunnel.com', proxied: true });
+  cf.dns.push({ id: 'autre2', type: 'CNAME', name: 'cam.exemple.fr', content: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee.cfargotunnel.com', proxied: true });
+  const avant = JSON.stringify([cf.ingress, cf.dns]);
+  let r = await admin.post('/api/routes', { hote: 'tenu.exemple.fr', cible: 'hub-x:80', mode: 'clair', cf: true });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.match(r.json.avertissement, /déjà une entrée dans le tunnel/);
+  const tenu = r.json.route.id;
+  r = await admin.post('/api/routes', { hote: 'cam.exemple.fr', cible: 'hub-x:80', mode: 'clair', cf: true });
+  assert.match(r.json.avertissement, /déjà un enregistrement CNAME/);
+  const cam = r.json.route.id;
+  assert.equal(JSON.stringify([cf.ingress.filter(x => x.hostname !== 'cam.exemple.fr'), cf.dns]), avant, 'rien de l’autre n’a bougé');
+  await admin.del(`/api/routes/${tenu}`);
+  await admin.del(`/api/routes/${cam}`);
+  assert.equal(JSON.stringify([cf.ingress, cf.dns]), avant, 'ni retiré en partant');
+  cf.ingress = cf.ingress.filter(x => x.hostname !== 'tenu.exemple.fr');
+  cf.dns = cf.dns.filter(d => !String(d.id).startsWith('autre'));
+  assert.equal(cf.ingress.length, ingress);
   delete relay.socle.comptes.estRenforcee;
 });
 
