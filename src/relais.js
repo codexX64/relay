@@ -57,6 +57,7 @@ export class Relais {
   constructor({ magasin, caddy, cloudflare, socket, journal, dns = null, alerter = () => {}, maintenant = () => Date.now() }) {
     Object.assign(this, { magasin, caddy, cloudflare, socket, journal, dns, alerter, maintenant });
     this.sante = new Map();
+    this.erreurDns = null;
   }
 
   configuration() {
@@ -87,15 +88,27 @@ export class Relais {
     return true;
   }
 
+  /** Les noms locaux écrits ; un échec est signalé une fois, pas à chaque tour, et sa fin aussi. */
+  ecrireDnsSignale() {
+    try { this.ecrireDns(); } catch (e) {
+      const m = e.message.slice(0, 200);
+      if (this.erreurDns !== m) this.alerter('caddy', `Noms locaux non écrits : ${m}`);
+      this.erreurDns = m;
+      return;
+    }
+    if (this.erreurDns) this.alerter('reprise', 'Noms locaux de nouveau écrits.');
+    this.erreurDns = null;
+  }
+
   async appliquer() {
-    try { this.ecrireDns(); } catch (e) { this.alerter('caddy', `Noms locaux non écrits : ${e.message.slice(0, 200)}`); }
+    this.ecrireDnsSignale();
     try { await this.caddy.charger(this.configuration()); }
     catch (e) { this.alerter('caddy', `Caddy a refusé la configuration : ${e.message.slice(0, 300)}`); throw e; }
   }
 
   /** Caddy a redémarré sans sa configuration (ou un autre l'a changée) : on la lui rend. */
   async reconcilier() {
-    try { this.ecrireDns(); } catch { /* signalé par appliquer() */ }
+    this.ecrireDnsSignale();
     const attendu = this.configuration().apps.http.servers;
     const servi = await this.caddy.serveurs();
     if (canonique(servi || {}) !== canonique(attendu)) { await this.appliquer(); return true; }

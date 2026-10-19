@@ -651,3 +651,18 @@ test('clé maîtresse tournée : les jetons de Relay sont rescellés sous la neu
     assert.equal(m3.reglage('telegram').jeton, null);
   } finally { db.close(); }
 });
+
+test('noms locaux non écrits : signalé une fois, pas à chaque tour, et la fin aussi', async () => {
+  const alertes = [], alerter = relay.relais.alerter, dns = relay.relais.dns;
+  relay.relais.alerter = (type, texte) => alertes.push([type, texte]);
+  fs.writeFileSync(path.join(tmp, 'pas-un-dossier'), '');
+  relay.relais.dns = { dossier: path.join(tmp, 'pas-un-dossier'), ip: '192.0.2.10' };
+  try {
+    for (let i = 0; i < 3; i++) await relay.relais.reconcilier();
+    assert.equal(alertes.filter(([, t]) => /Noms locaux non écrits/.test(t)).length, 1, JSON.stringify(alertes));
+    relay.relais.dns = dns;
+    await relay.relais.reconcilier();
+    await relay.relais.reconcilier();
+    assert.equal(alertes.filter(([, t]) => /de nouveau écrits/.test(t)).length, 1, JSON.stringify(alertes));
+  } finally { relay.relais.alerter = alerter; relay.relais.dns = dns; }
+});
