@@ -25,7 +25,7 @@ const relay = await demarrer({ DATA_DIR: path.join(dossier, 'data'), PORT: Strin
 relay.magasin.poserReglage('general', { domaines: ['home.arpa', 'exemple.org'] });
 for (const r of [
   { hote: 'mapmylan.home.arpa', cible: 'hub-mapmylan:8090', mode: 'local', nom: 'MapMyLAN' },
-  { hote: 'hyperviseur-de-la-salle-serveur.home.arpa', cible: 'https://192.0.2.30:8006', mode: 'local', nom: 'Hyperviseur' },
+  { hote: 'console-de-la-salle-serveur.home.arpa', cible: 'https://192.0.2.30:8443', mode: 'local', nom: 'Console' },
   { hote: 'statut.exemple.org', cible: 'hub-oracle:8090', mode: 'clair', cf: true, actif: false },
 ]) await relay.relais.creer(r, { proprietaire: r.hote.startsWith('mapmylan') ? 'hub:mapmylan' : null });
 relay.magasin.creerClient('gestionnaire-de-conteneurs', 'routes');

@@ -112,7 +112,7 @@ after(async () => { await relay?.arreter(); faux.close(); externe.close(); cible
 test('configuration de Caddy : 80 redirige, 443 sert, un certificat par mode, l’API sur le socket', () => {
   const conf = construire([
     { hote: 'a.exemple.fr', cible: 'hub-a:8090', mode: 'local', actif: true },
-    { hote: 'b.exemple.fr', cible: 'https://192.0.2.20:8006', mode: 'public', actif: true, verifier: false },
+    { hote: 'b.exemple.fr', cible: 'https://192.0.2.20:8443', mode: 'public', actif: true, verifier: false },
     { hote: 'c.exemple.fr', cible: 'hub-c:80', mode: 'clair', cf: true, actif: true },
     { hote: 'd.exemple.fr', cible: 'hub-d:80', mode: 'local', actif: false },
   ], { socket: '/run/caddy/admin.sock', acme: 'ops@exemple.fr' });
@@ -128,11 +128,11 @@ test('configuration de Caddy : 80 redirige, 443 sert, un certificat par mode, l�
   // Une zone Cloudflare connectée : ses noms locaux ont un certificat Let's Encrypt par le défi DNS.
   const avecCf = construire([
     { hote: 'a.exemple.fr', cible: 'hub-a:8090', mode: 'local', actif: true },
-    { hote: 'nas.home.arpa', cible: 'hub-n:80', mode: 'local', actif: true },
+    { hote: 'cave.home.arpa', cible: 'hub-n:80', mode: 'local', actif: true },
   ], { socket: '/s', cloudflare: { zones: ['exemple.fr'], jeton: 'jeton-cf' } });
   assert.deepEqual(avecCf.apps.tls.automation.policies, [
     { subjects: ['a.exemple.fr'], issuers: [{ module: 'acme', challenges: { dns: { provider: { name: 'cloudflare', api_token: 'jeton-cf' }, resolvers: ['1.1.1.1:53', '1.0.0.1:53'] } } }] },
-    { subjects: ['nas.home.arpa'], issuers: [{ module: 'internal' }] },
+    { subjects: ['cave.home.arpa'], issuers: [{ module: 'internal' }] },
   ]);
   assert.deepEqual(lireCible('https://192.0.2.20'), { schema: 'https', hote: '192.0.2.20', port: 443, dial: '192.0.2.20:443' });
 });
@@ -494,7 +494,7 @@ test('reprise d’un Relay 1.x : routes, services (jetons toujours valables) et 
   const d = fs.mkdtempSync(path.join(tmp, 'reprise-'));
   fs.writeFileSync(path.join(d, 'routes.json'), JSON.stringify({ routes: [
     { id: 'r1', name: 'Carte', host: 'carte.exemple.fr', upstream: '192.0.2.20:8090', tls: 'internal', enabled: true, owner: 'c1' },
-    { id: 'r2', host: 'pve.exemple.fr', upstream: 'https://192.0.2.30:8006', tls: 'auto', verify: false },
+    { id: 'r2', host: 'console.exemple.fr', upstream: 'https://192.0.2.30:8443', tls: 'auto', verify: false },
     { id: 'r3', host: 'dyn.exemple.fr', upstream: 'docker://portainer:9000', tls: 'auto' },
     { id: 'r4', host: 'entete.exemple.fr', upstream: '192.0.2.21:80', tls: 'auto', hostHeader: 'a b\r\nX-Injecte: 1' },
     { id: 'r5', host: 'port.exemple.fr', upstream: '192.0.2.22:99999', tls: 'auto' },
@@ -513,7 +513,7 @@ test('reprise d’un Relay 1.x : routes, services (jetons toujours valables) et 
   assert.deepEqual([bilan.routes, bilan.clients, bilan.ignorees], [2, 1, ['dyn.exemple.fr', 'entete.exemple.fr', 'port.exemple.fr']], 'contrôlées comme une saisie');
   assert.equal(m.clientParJeton('svc_autre'), null, 'un nom de service hors du motif n’est pas repris');
   assert.equal(m.routeParHote('carte.exemple.fr').mode, 'local');
-  assert.equal(m.routeParHote('pve.exemple.fr').mode, 'public');
+  assert.equal(m.routeParHote('console.exemple.fr').mode, 'public');
   assert.equal(m.clientParJeton('svc_ancien').nom, 'carte', 'le jeton de la 1.x vaut toujours');
   assert.equal(m.routeParHote('carte.exemple.fr').client, m.clientParJeton('svc_ancien').id);
   assert.equal(m.secret('telegram', 'jeton'), '123:abc');

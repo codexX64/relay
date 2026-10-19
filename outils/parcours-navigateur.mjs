@@ -55,7 +55,7 @@ await page.getByRole('button', { name: 'Nouvelle route' }).click();
 await dialogue().getByText('Certificat', { exact: true }).waitFor();
 await controle('nouvelle-route');
 await fermer();
-await page.getByRole('button', { name: 'Actions pour hyperviseur-de-la-salle-serveur.home.arpa' }).click();
+await page.getByRole('button', { name: 'Actions pour console-de-la-salle-serveur.home.arpa' }).click();
 await page.waitForTimeout(300);
 await controle('actions-route');
 await page.keyboard.press('Escape');

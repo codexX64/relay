@@ -157,7 +157,7 @@ async function formRoute(r, st, apres) {
   const sous = h('input', { class: 'field', maxlength: 190, placeholder: 'nom', value: nomInit, autocomplete: 'off', spellcheck: 'false', 'aria-label': 'Nom' });
   const domaine = h('select', { class: 'field', 'aria-label': 'Domaine' }, doms.length ? doms.map(d => h('option', { value: d, text: d, selected: d === domInit })) : [h('option', { value: '', text: 'aucun domaine' })]);
   const hote = h('div', { class: 'saisie-domaine' }, sous, h('span', { class: 'point', text: '.', 'aria-hidden': 'true' }), domaine);
-  const cible = h('input', { class: 'field', maxlength: 300, placeholder: 'hub-mapmylan:8090 ou https://192.0.2.20:8006', value: r?.cible || '', autocomplete: 'off', spellcheck: 'false' });
+  const cible = h('input', { class: 'field', maxlength: 300, placeholder: 'hub-mapmylan:8090 ou https://192.0.2.20:8443', value: r?.cible || '', autocomplete: 'off', spellcheck: 'false' });
   const mode = h('select', { class: 'field', 'aria-label': 'Certificat' }, Object.entries(MODES).map(([v, t]) => h('option', { value: v, text: t, selected: (r?.mode || 'local') === v })));
   const cf = interrupteur(r?.cf, 'Publier par le tunnel Cloudflare');
   const verifier = interrupteur(r?.verifier, 'Vérifier le certificat de la cible');
