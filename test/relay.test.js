@@ -521,6 +521,16 @@ test('reprise d’un Relay 1.x : routes, services (jetons toujours valables) et 
   assert.equal(m.reglage('general').sondeSecondes, 20);
   assert.equal(reprendre({ dossier: d, db, magasin: m, journal: new Journal(db), log: silence }), null, 'une seule fois');
   db.close();
+  // Un dossier vide ou un fichier illisible : le démarrage s'arrête, rien n'est marqué repris.
+  const vide = fs.mkdtempSync(path.join(tmp, 'reprise-vide-')), casse = fs.mkdtempSync(path.join(tmp, 'reprise-casse-'));
+  fs.writeFileSync(path.join(casse, 'settings.json'), '{"general": ');
+  for (const [dossier, motif] of [[vide, /ni routes\.json ni settings\.json/], [casse, /settings\.json illisible/]]) {
+    const b = ouvrirBase(path.join(dossier, 'base'));
+    const mb = new Magasin(b, { coffre });
+    assert.throws(() => reprendre({ dossier, db: b, magasin: mb, journal: new Journal(b), log: silence }), motif);
+    assert.equal(mb.reglage('general').repris, undefined, 'rien de marqué : la reprise se refera');
+    b.close();
+  }
 });
 
 test('Cloudflare : une règle joker couvre déjà le nom, l’ingress ne bouge pas', () => {

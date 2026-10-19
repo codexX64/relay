@@ -17,9 +17,17 @@ const MODE = { auto: 'public', internal: 'local', off: 'clair' };
 export function reprendre({ dossier, db, magasin, journal, log = console }) {
   if (!dossier) return null;
   if (magasin.reglage('general').repris || db.prepare('SELECT COUNT(*) n FROM routes').get().n) return null;
-  const lire = f => { try { return JSON.parse(fs.readFileSync(path.join(dossier, f), 'utf8')); } catch { return null; } };
-  const routes = lire('routes.json')?.routes || [];
-  const reglages = lire('settings.json') || {};
+  // Un fichier absent ne dit rien ; un fichier illisible arrête le démarrage :
+  // la reprise ne se fait qu'une fois, elle ne se fait pas à moitié.
+  const lire = f => {
+    const chemin = path.join(dossier, f);
+    if (!fs.existsSync(chemin)) return null;
+    try { return JSON.parse(fs.readFileSync(chemin, 'utf8')); } catch (e) { throw new Error(`RELAY_REPRISE : ${f} illisible (${e.message}) ; rien n'est repris.`); }
+  };
+  const lus = { routes: lire('routes.json'), reglages: lire('settings.json') };
+  if (!lus.routes && !lus.reglages) throw new Error(`RELAY_REPRISE : ni routes.json ni settings.json dans ${dossier} ; rien n'est repris.`);
+  const routes = lus.routes?.routes || [];
+  const reglages = lus.reglages || {};
   const bilan = { routes: 0, clients: 0, ignorees: [] };
 
   db.exec('BEGIN');

@@ -34,7 +34,7 @@ export async function demarrer(env = process.env, { log = CONSOLE } = {}) {
     socle.journal.ecrire({ acteur: 'système', action: 'coffre.secrets_retires', resultat: 'erreur', details: { n: bilan.retires } });
   }
   if (cfg.acme && !magasin.reglage('general').acme) magasin.poserReglage('general', { acme: cfg.acme });
-  reprendre({ dossier: cfg.reprise, db, magasin, journal: socle.journal, log });
+  try { reprendre({ dossier: cfg.reprise, db, magasin, journal: socle.journal, log }); } catch (e) { socle.arreter(); db.close(); throw e; }
 
   const caddy = new Caddy({ socket: cfg.caddySocket });
   const cloudflare = new Cloudflare({ magasin, api: cfg.cfApi, service: cfg.caddyService });
