@@ -163,7 +163,7 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
     const qui = surLesRoutes(ctx, 'admin');
     await relais.appliquer();
     tracer(ctx, qui, 'caddy.applique', 'configuration');
-    relais.sonderTout().catch(() => {});
+    relais.sonderTout().catch(() => {});   // en fond : chaque résultat va dans l'état des routes
     return { ok: true };
   }, { role: 'admin', jeton: true });
 
@@ -291,6 +291,7 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
     const b = await corps(ctx, S.general);
     const n = magasin.poserReglage('general', b);
     tracer(ctx, qui, 'reglages.general', 'general', b);
+    // Un refus de Caddy est déjà signalé par appliquer() et retenu dans l'état.
     if ('acme' in b) relais.appliquer().catch(() => {});
     if ('domaines' in b) relais.ecrireDnsSignale();
     return n;

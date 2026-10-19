@@ -122,6 +122,7 @@ export class Relais {
     if (this.magasin.routeParHote(r.hote)) throw erreur(409, `${r.hote} a déjà une route.`);
     const route = this.magasin.creerRoute({ ...r, proprietaire, client });
     try { await this.appliquer(); } catch (e) { this.magasin.retirerRoute(route.id); throw e; }
+    // En fond : la sonde dit son résultat dans l'état ; seule une écriture du journal pourrait échouer.
     this.sonder(route).catch(() => {});
     const avertissement = await this.suivreCf(null, route);
     return { route, ...(avertissement ? { avertissement } : {}) };

@@ -53,6 +53,7 @@ export class Telegram {
   }
 
   /** Une alerte : seulement si elles sont activées. */
+  // envoyer() rend son échec ; seul un jeton illisible lèverait, et une alerte ne fait pas tomber le service.
   alerte(texte) { if (this.reglage.alertes) this.envoyer(texte).catch(() => {}); }
 
   lier() {
