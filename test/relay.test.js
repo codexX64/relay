@@ -431,6 +431,19 @@ test('certificat local téléchargeable ; configuration lisible par l’admin se
   assert.equal((await admin.get('/api/configuration')).json.admin.listen, `unix/${SOCKET}|0666`);
 });
 
+test('configuration lue par l’admin : le jeton Cloudflare du défi DNS n’en sort pas', async () => {
+  relay.magasin.poserSecret('cloudflare', 'jeton', 'cf-jeton-de-test-0123456789abcdef');
+  relay.magasin.poserReglage('cloudflare', { zones: ['exemple.fr'] });
+  const r = await admin.post('/api/routes', { hote: 'tenu.exemple.fr', cible: 'hub-tenu:80', mode: 'local' });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  assert.ok(JSON.stringify(relay.relais.configuration()).includes('cf-jeton-de-test'), 'Caddy, lui, le reçoit');
+  const c = await admin.get('/api/configuration');
+  assert.equal(c.status, 200);
+  assert.ok(!c.texte.includes('cf-jeton-de-test'), 'il ne redescend pas');
+  assert.equal(c.json.apps.tls.automation.policies.find(p => p.subjects.includes('tenu.exemple.fr')).issuers[0].challenges.dns.provider.api_token, '(scellé)');
+  await admin.del(`/api/routes/${r.json.route.id}`);
+});
+
 test('reprise d’un Relay 1.x : routes, services (jetons toujours valables) et réglages, secrets scellés', async () => {
   const { ouvrirBase, Magasin, empreinte } = await import('../src/base.js');
   const { reprendre } = await import('../src/reprise.js');

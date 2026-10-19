@@ -153,7 +153,15 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
     return { ok: true };
   }, { role: 'admin', jeton: true });
 
-  r.get('/api/configuration', ctx => { session(ctx, { role: 'admin' }); return relais.configuration(); }, { role: 'admin' });
+  // Telle que Caddy la reçoit, moins le jeton Cloudflare du défi DNS : un secret scellé ne redescend jamais.
+  r.get('/api/configuration', ctx => {
+    session(ctx, { role: 'admin' });
+    const conf = relais.configuration();
+    for (const p of conf.apps.tls?.automation?.policies || []) {
+      for (const i of p.issuers || []) if (i.challenges?.dns?.provider?.api_token) i.challenges.dns.provider.api_token = '(scellé)';
+    }
+    return conf;
+  }, { role: 'admin' });
 
   // Le certificat racine du mode local : à installer sur les postes.
   r.get('/api/autorite', async ctx => {
