@@ -7,8 +7,9 @@ service que le Hub installe.
 
 Trois conteneurs :
 
-- **relay-caddy** — le trafic (ports 80 et 443). Le binaire officiel de Caddy,
-  vérifié par son empreinte, seul sur une image vide, sans root ni capacité.
+- **relay-caddy** — le trafic (ports 80 et 443). Caddy et son module DNS
+  Cloudflare, compilés depuis leurs sources (sommes Go vérifiées), seuls sur
+  une image vide, sans root ni capacité.
   Son API d'administration n'écoute que sur un socket Unix, dans un volume que
   seul Relay partage avec lui.
 - **relay-dns** — dnsmasq : tous les noms de la zone locale (`home.arpa`)
@@ -61,6 +62,54 @@ son chemin : au premier démarrage, Relay reprend les routes, les services
 raccordés (leurs jetons restent valables) et les réglages Telegram et
 Cloudflare, jetons scellés à l'arrivée. Les routes `docker://` sont à
 republier depuis le Hub : Relay 2 ne monte plus le socket Docker.
+
+## Relay seul
+
+La clé maîtresse vit dans un secret Docker, hors du volume de données, lisible
+par l'utilisateur du conteneur (10001) seul. Garder une copie hors ligne de
+`secrets/socle_cle` : sans elle, une sauvegarde de la base ne rouvre ni les
+secrets TOTP ni les jetons Telegram et Cloudflare.
+
+```bash
+cp .env.example .env    # RELAY_IP, RELAY_HUB_TOKEN (openssl rand -hex 24, ou vide sans Hub)
+mkdir -p secrets && openssl rand -base64 32 > secrets/socle_cle && : > secrets/socle_cle_ancienne
+sudo chown 10001:10001 secrets/socle_cle secrets/socle_cle_ancienne && sudo chmod 400 secrets/socle_cle secrets/socle_cle_ancienne
+docker compose up -d --build
+docker compose logs relay | grep "Jeton d'installation"
+```
+
+Sans `SOCLE_CLE` ni `SOCLE_CLE_FILE`, la clé est créée dans `DATA_DIR/cles`,
+ce qui ne convient qu'au développement. Installé par le Hub, Relay reçoit la
+sienne du coffre du Hub.
+
+**Tourner la clé maîtresse.** La clé actuelle dans `SOCLE_CLE_ANCIENNE` (le
+Hub, ou `secrets/socle_cle_ancienne`), une neuve (`openssl rand -base64 32`)
+dans `SOCLE_CLE`, puis redémarrer : Relay rescelle chaque secret TOTP et chaque
+jeton de ses réglages. Vider ensuite l'ancienne et redémarrer.
+
+## Sauvegardes
+
+Une sauvegarde est un instantané cohérent de la base (routes, services
+raccordés, réglages, comptes, journal), chiffré pour une clé publique RSA
+(3072 bits au moins) dont la clé privée ne vit **pas** sur la machine de Relay.
+
+```bash
+# Une fois, sur le poste qui gardera la clé privée :
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out relay-sauvegarde.pem
+openssl pkey -in relay-sauvegarde.pem -pubout -out relay-sauvegarde.pub
+# Chaque jour, sur l'hôte de Relay (la clé publique suffit) :
+docker exec -i <relay> node src/cli.js sauvegarde < relay-sauvegarde.pub > relay-$(date -u +%F).sauv
+# Restauration, sur le poste de la clé privée, dans un fichier neuf :
+node src/cli.js restaurer relay-sauvegarde.pem relay.db < relay-AAAA-MM-JJ.sauv
+```
+
+Les certificats de Caddy (volume `caddy-data`) ne sont pas dans la sauvegarde :
+Caddy les redemande seul.
+
+**Incident.** `docker exec <relay> node src/cli.js secrets retirer` oublie les
+jetons Telegram et Cloudflare (ou ceux d'un seul canal) et rend à Caddy sa
+configuration sans le jeton Cloudflare ; les révoquer aussi chez leur
+fournisseur. Voir SECURITY.md, « Incident runbook ».
 
 ## Variables
 
