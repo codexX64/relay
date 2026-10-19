@@ -575,3 +575,48 @@ test('autorisation : un jeton « routes » gère les routes, ni les réglages ni
   await admin.del(`/api/routes/${r.json.route.id}`);
   assert.deepEqual(relay.magasin.reglage('general').domaines, ['exemple.fr'], 'les domaines de base ne bougent pas');
 });
+
+test('ligne de commande : sauvegarde chiffrée pour une clé publique, restaurée ailleurs ; secrets retirés pour un incident, Caddy suit', async () => {
+  const { execFile } = await import('node:child_process');
+  const { DatabaseSync } = await import('node:sqlite');
+  const crypto = await import('node:crypto');
+  const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 3072, publicKeyEncoding: { type: 'spki', format: 'pem' }, privateKeyEncoding: { type: 'pkcs8', format: 'pem' } });
+  // Asynchrone : le faux Caddy vit dans ce processus et doit pouvoir répondre.
+  const cli = (args, entree = '') => new Promise((ok, ko) => {
+    const p = execFile(process.execPath, ['--disable-warning=ExperimentalWarning', path.resolve(import.meta.dirname, '..', 'src', 'cli.js'), ...args],
+      { encoding: 'buffer', env: { PATH: process.env.PATH, DATA_DIR: path.join(tmp, 'data'), RELAY_HUB_TOKEN: JETON_HUB, RELAY_CADDY_SOCKET: SOCKET, RELAY_IP: '192.0.2.10', RELAY_DNS_DIR: DNS } },
+      (e, stdout, stderr) => (e ? ko(Object.assign(e, { stderr })) : ok(stdout)));
+    p.stdin.end(entree);
+  });
+  relay.magasin.poserSecret('telegram', 'jeton', '123456:jeton-telegram-de-test-abcdefgh');
+  relay.magasin.poserSecret('cloudflare', 'jeton', 'cf-jeton-de-test-0123456789abcdef');
+  relay.magasin.poserReglage('cloudflare', { zones: ['exemple.fr'] });
+  const r = await admin.post('/api/routes', { hote: 'coffre.exemple.fr', cible: 'hub-coffre:80', mode: 'local' });
+  assert.ok(JSON.stringify(caddy.conf).includes('cf-jeton-de-test'), 'Caddy porte le jeton du défi DNS');
+  const sauv = await cli(['sauvegarde'], publicKey);
+  assert.ok(!sauv.includes(Buffer.from('SQLite format')), 'la sauvegarde est chiffrée');
+  const dossier = fs.mkdtempSync(path.join(os.tmpdir(), 'relay-restaure-'));
+  try {
+    const pem = path.join(dossier, 'cle.pem');
+    fs.writeFileSync(pem, privateKey, { mode: 0o600 });
+    await cli(['restaurer', pem, path.join(dossier, 'relay.db')], sauv);
+    const copie = new DatabaseSync(path.join(dossier, 'relay.db'), { readOnly: true });
+    const tg = JSON.parse(copie.prepare("SELECT valeur FROM reglages WHERE cle = 'telegram'").get().valeur);
+    assert.ok(copie.prepare("SELECT 1 FROM routes WHERE hote = 'coffre.exemple.fr'").get(), 'les routes reviennent');
+    copie.close();
+    assert.ok(tg.jeton && !JSON.stringify(tg).includes('jeton-telegram-de-test'), 'restaurée, secrets toujours scellés');
+    assert.equal((fs.statSync(path.join(dossier, 'relay.db')).mode & 0o777), 0o600);
+    await assert.rejects(cli(['restaurer', pem, path.join(dossier, 'relay.db')], ''), e => /existe déjà/.test(String(e.stderr)), 'jamais par-dessus une base');
+  } finally { fs.rmSync(dossier, { recursive: true, force: true }); }
+  assert.match((await cli(['secrets', 'retirer', 'telegram'])).toString(), /retirés : telegram\.jeton/);
+  assert.equal(relay.magasin.secret('telegram', 'jeton'), '');
+  const sortie = (await cli(['secrets', 'retirer'])).toString();
+  assert.match(sortie, /retirés : cloudflare\.jeton/);
+  assert.match(sortie, /configuration rendue sans le jeton Cloudflare/);
+  assert.ok(!JSON.stringify(caddy.conf).includes('cf-jeton-de-test'), 'Caddy ne le garde pas en mémoire');
+  await assert.rejects(cli(['secrets', 'retirer', 'inconnu']), e => /canal inconnu/.test(String(e.stderr)));
+  const actions = relay.db.prepare("SELECT action FROM socle_journal WHERE action IN ('sauvegarde.faite', 'secrets.retires')").all().map(x => x.action);
+  assert.deepEqual(actions.sort(), ['sauvegarde.faite', 'secrets.retires', 'secrets.retires']);
+  assert.ok(relay.socle.journal.verifier().ok, 'la chaîne tient avec deux écrivains');
+  await admin.del(`/api/routes/${r.json.route.id}`);
+});

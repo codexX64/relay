@@ -48,7 +48,7 @@ const DEFAUTS = {
   cloudflare: { jeton: null, compte: '', nomCompte: '', tunnel: '', nomTunnel: '', actif: false, zones: [] },
 };
 // Les champs scellés : jamais rendus, jamais journalisés.
-const SCELLES = { telegram: ['jeton'], cloudflare: ['jeton'] };
+export const SCELLES = { telegram: ['jeton'], cloudflare: ['jeton'] };
 
 export class Magasin {
   constructor(db, { coffre }) { this.db = db; this.coffre = coffre; }
