@@ -8,6 +8,6 @@
   "engines": { "node": ">=24.7" },
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/main.js",
-    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js"
+    "test": "node --disable-warning=ExperimentalWarning --test test/*.test.js socle/test/*.test.js"
   }
 }
