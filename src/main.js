@@ -26,6 +26,13 @@ export async function demarrer(env = process.env, { log = CONSOLE } = {}) {
   const db = ouvrirBase(cfg.donnees);
   const socle = await demarrerSocle({ service: { id: 'relay', nom: 'Relay', contactSecurite: CONTACT_SECURITE }, db, dossier: cfg.donnees, env, log });
   const magasin = new Magasin(db, { coffre: socle.coffre });
+  let bilan;
+  try { bilan = magasin.resceller(); } catch (e) { socle.arreter(); db.close(); throw e; }
+  if (bilan.rescelles) log.info?.(`[coffre] ${bilan.rescelles} jeton(s) de Relay rescellé(s) sous SOCLE_CLE.`);
+  if (bilan.retires) {
+    log.warn?.(`[coffre] ${bilan.retires} jeton(s) de Relay illisible(s) sous les deux clés, retiré(s) : à ressaisir dans les réglages.`);
+    socle.journal.ecrire({ acteur: 'système', action: 'coffre.secrets_retires', resultat: 'erreur', details: { n: bilan.retires } });
+  }
   if (cfg.acme && !magasin.reglage('general').acme) magasin.poserReglage('general', { acme: cfg.acme });
   reprendre({ dossier: cfg.reprise, db, magasin, journal: socle.journal, log });
 

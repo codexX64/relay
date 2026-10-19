@@ -620,3 +620,24 @@ test('ligne de commande : sauvegarde chiffrée pour une clé publique, restauré
   assert.ok(relay.socle.journal.verifier().ok, 'la chaîne tient avec deux écrivains');
   await admin.del(`/api/routes/${r.json.route.id}`);
 });
+
+test('clé maîtresse tournée : les jetons de Relay sont rescellés sous la neuve ; sans l’ancienne, le démarrage s’arrête au lieu de les perdre', async () => {
+  const { ouvrirBase, Magasin } = await import('../src/base.js');
+  const { Coffre } = await import('../socle/src/index.js');
+  const crypto = await import('node:crypto');
+  const d = fs.mkdtempSync(path.join(tmp, 'rotation-'));
+  const [c1, c2, c3] = [1, 2, 3].map(() => crypto.randomBytes(32).toString('base64'));
+  const db = ouvrirBase(path.join(d, 'base'));
+  try {
+    new Magasin(db, { coffre: new Coffre({ cle: c1 }) }).poserSecret('telegram', 'jeton', '123456:jeton-avant-rotation-abcdefgh');
+    assert.throws(() => new Magasin(db, { coffre: new Coffre({ cle: c2 }) }).resceller(), /SOCLE_CLE_ANCIENNE/);
+    const m = new Magasin(db, { coffre: new Coffre({ cle: c2, ancienne: c1 }) });
+    assert.deepEqual(m.resceller(), { rescelles: 1, retires: 0 });
+    assert.equal(new Magasin(db, { coffre: new Coffre({ cle: c2 }) }).secret('telegram', 'jeton'), '123456:jeton-avant-rotation-abcdefgh', 'sous la seule clé neuve');
+    assert.deepEqual(new Magasin(db, { coffre: new Coffre({ cle: c2 }) }).resceller(), { rescelles: 0, retires: 0 }, 'rien à refaire');
+    // Illisible sous les deux clés : retiré, le bilan le dit.
+    const m3 = new Magasin(db, { coffre: new Coffre({ cle: c3, ancienne: c1 }) });
+    assert.deepEqual(m3.resceller(), { rescelles: 0, retires: 1 });
+    assert.equal(m3.reglage('telegram').jeton, null);
+  } finally { db.close(); }
+});
