@@ -79,7 +79,18 @@ docker compose logs relay | grep "Jeton d'installation"
 ```
 
 Sans `SOCLE_CLE` ni `SOCLE_CLE_FILE`, la clé est créée dans `DATA_DIR/cles`,
-ce qui ne convient qu'au développement. Installé par le Hub, Relay reçoit la
+ce qui ne convient qu'au développement.
+
+**Relay seul déjà en service avant la 2.3**, la clé dans le volume : la
+reprendre telle quelle avant de mettre à jour. Au démarrage suivant, Relay
+constate que c'est la même et la retire du volume ; une clé différente arrête
+le démarrage au lieu de perdre les secrets.
+
+```bash
+mkdir -p secrets && docker compose cp relay:/data/cles/socle.key secrets/socle_cle && : > secrets/socle_cle_ancienne
+sudo chown 10001:10001 secrets/socle_cle secrets/socle_cle_ancienne && sudo chmod 400 secrets/socle_cle secrets/socle_cle_ancienne
+docker compose up -d --build
+``` Installé par le Hub, Relay reçoit la
 sienne du coffre du Hub.
 
 **Tourner la clé maîtresse.** La clé actuelle dans `SOCLE_CLE_ANCIENNE` (le
