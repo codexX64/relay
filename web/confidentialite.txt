@@ -1,11 +1,94 @@
-Relay — ce qui est gardé
+RELAY — CE QUE LE SERVICE GARDE, ET POURQUOI
 
-Comptes : identifiant, empreinte du mot de passe (Argon2id), facteurs (TOTP scellé, clés d'accès), sessions et journal de sécurité, comme tous les services du socle.
-Routes : nom, cible, mode, dates. Aucune requête relayée n'est enregistrée par Relay ; Caddy ne journalise pas les accès.
-Services raccordés : nom et empreinte du jeton (le jeton lui-même n'est montré qu'une fois).
-Réglages : domaines, adresse Let's Encrypt, jetons Cloudflare et Telegram scellés par la clé maîtresse.
+Relay est installé et exploité par la personne ou l'équipe qui l'héberge :
+c'est elle qui répond de ces données. Ce texte dit ce que le logiciel conserve,
+ce qu'il envoie ailleurs, et comment chacun exerce ses droits.
 
-Ce qui part ailleurs :
-- Let's Encrypt, pour une route en mode public : le nom à certifier et l'adresse de contact.
-- Cloudflare, si le tunnel est activé : le nom de chaque route cochée.
-- Telegram, si un bot est lié : les messages d'alerte (nom de la route et sa cible).
+1. CE QUI EST CONSERVÉ
+
+Comptes des opérateurs
+  - identifiant, nom affiché, rôle, dates de création et de dernière connexion ;
+  - empreinte Argon2id du mot de passe (le mot de passe lui-même n'est jamais
+    gardé), secret TOTP chiffré, clés publiques des clés d'accès avec leur nom,
+    empreintes des codes de secours ;
+  - adresse d'alerte, si l'opérateur en a vérifié une.
+  Finalité : se connecter et protéger le compte. Durée : tant que le compte existe.
+
+Sessions
+  - appareil (navigateur et système, sans empreinte), adresse IP, dates.
+  Finalité : lister et fermer ses appareils. Durée : douze heures au plus,
+  une heure sans activité.
+
+Événements de sécurité
+  - connexions, échecs, changements de facteurs, refus, jetons refusés, routes
+    créées, changées ou retirées (avec leur cible), services raccordés, réglages
+    changés (sans la valeur d'un jeton), sauvegardes, avec l'adresse IP.
+  Finalité : détecter un abus et répondre à un incident. Durée : cinquante
+  derniers événements par compte ; journal du service : 365 jours.
+
+Routes
+  - nom servi, cible (adresse et port d'une machine du réseau), mode, en-tête
+    Host éventuel, qui l'a posée (une personne, le Hub ou un service raccordé),
+    dates. L'état de chaque cible (répond ou non, délai) est gardé en mémoire
+    seulement.
+  Finalité : servir chaque nom vers sa machine. Durée : tant que la route existe.
+  Aucune requête relayée n'est enregistrée : Caddy ne journalise pas les accès.
+
+Services raccordés
+  - nom, portée, empreinte du jeton (le jeton lui-même n'est montré qu'une fois),
+    dates de création, de dernier appel et de dernier changement de jeton.
+  Finalité : laisser un service publier ses propres noms. Durée : tant que le
+  service est raccordé ; ses routes partent avec lui.
+
+Réglages
+  - domaines de base, adresse de contact Let's Encrypt, cadence des sondes ;
+    identifiant du chat Telegram lié ; compte, zones et tunnel Cloudflare.
+  - jetons Cloudflare et Telegram, scellés au repos (AES-256-GCM, sous-clé par
+    usage). Ces jetons ne ressortent jamais de l'API après enregistrement.
+
+Sauvegardes
+  - l'exploitant peut tirer une copie de la base entière, chiffrée pour une clé
+    dont la partie privée ne vit pas sur la machine de Relay.
+  Finalité : restaurer le service après une panne ou un incident. Durée : celle
+  que l'exploitant fixe (trente jours conseillés) ; un compte effacé disparaît
+  des sauvegardes à mesure qu'elles expirent.
+
+2. CE QUI PART AILLEURS
+
+  - Let's Encrypt, pour une route en mode public ou un nom local d'une zone
+    Cloudflare : le nom à certifier et, s'il est posé, l'adresse de contact.
+  - Cloudflare, si un jeton est connecté : pour chaque nom local d'une de ses
+    zones, un enregistrement A vers l'adresse privée de la machine (visible dans
+    le DNS public) et le défi du certificat ; si le tunnel est activé, le nom de
+    chaque route cochée et le trafic de ces routes, que Cloudflare porte en HTTPS.
+  - Telegram, si un bot est lié : les alertes (nom de la route et sa cible) et
+    les réponses aux commandes du chat lié.
+  - Le Hub, s'il installe Relay : les routes, leur état et les domaines.
+  - Le relais SMTP de l'exploitant, s'il est configuré : les alertes de
+    sécurité des comptes, à l'adresse vérifiée.
+  Aucune mesure d'audience, aucun traceur, aucune publicité.
+
+3. COOKIES
+
+  Un cookie de session, indispensable à la connexion, et un cookie de cérémonie
+  de cinq minutes pendant une connexion par clé d'accès. Aucun autre.
+
+4. DROITS
+
+  - Accès et portabilité : page Sécurité, « Exporter mes données » (fichier JSON).
+  - Rectification : facteurs et adresse d'alerte depuis la page Sécurité ;
+    nom affiché et rôle, auprès de l'exploitant.
+  - Effacement : le compte et tout ce qui s'y rattache, depuis la page Sécurité,
+    « Supprimer mon compte » (une confirmation récente est demandée), ou par un
+    administrateur. Relay ne garde rien d'un compte hors du socle commun.
+  - Toute demande : auprès de l'exploitant de cette instance.
+
+5. SÉCURITÉ ET INCIDENTS
+
+  Les mesures techniques et la conduite à tenir en cas d'incident, y compris la
+  notification d'une violation de données dans les 72 heures, relèvent de
+  l'exploitant ; le fichier SECURITY.md du dépôt décrit les mesures en place,
+  le runbook d'incident et le canal de signalement d'une faille.
+
+Relay n'est pas destiné aux mineurs et ne traite aucune catégorie
+particulière de données.
