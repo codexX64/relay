@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "id": "relay",
   "name": "Relay",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Un nom par service : domaines Cloudflare sans rien sur les appareils, home.arpa par son résolveur, tunnel, santé. Ajoute la page Connexions au Hub.",
   "icon": "globe",
   "repository": "https://github.com/CodexX64/relay",
@@ -70,7 +70,7 @@
       "key": "IMAGE_TAG",
       "label": "Version de l'image",
       "type": "string",
-      "default": "2.2.0",
+      "default": "2.3.0",
       "help": "Étiquette des images relay et relay-caddy.",
       "advanced": true
     },
