@@ -108,6 +108,21 @@ before(async () => {
 });
 after(async () => { await relay?.arreter(); faux.close(); externe.close(); cible.close(); fs.rmSync(tmp, { recursive: true, force: true }); });
 
+test('base : dossier en 0700, base et journaux WAL en 0600, même sous un masque permissif (ligne de commande)', async () => {
+  const { ouvrirBase } = await import('../src/base.js');
+  const d = path.join(fs.mkdtempSync(path.join(tmp, 'droits-')), 'data');
+  const masque = process.umask(0o022);
+  try {
+    const db = ouvrirBase(d);
+    db.exec('CREATE TABLE t(x); INSERT INTO t VALUES (1);');
+    db.close();
+    const db2 = ouvrirBase(d);
+    assert.equal(fs.statSync(d).mode & 0o777, 0o700);
+    for (const f of ['relay.db', 'relay.db-wal', 'relay.db-shm']) if (fs.existsSync(path.join(d, f))) assert.equal(fs.statSync(path.join(d, f)).mode & 0o777, 0o600, f);
+    db2.close();
+  } finally { process.umask(masque); }
+});
+
 test('configuration de Caddy : 80 redirige, 443 sert, un certificat par mode, l’API sur le socket', () => {
   const conf = construire([
     { hote: 'a.exemple.fr', cible: 'hub-a:8090', mode: 'local', actif: true },
@@ -156,7 +171,11 @@ test('autorisation : sans session ni jeton, rien ; la lecture voit, n’écrit p
   assert.equal((await membre.get('/api/etat')).status, 200);
   assert.equal((await membre.post('/api/routes', { hote: 'x.exemple.fr', cible: 'a:80' })).status, 403);
   assert.equal((await membre.get('/api/reglages')).status, 403);
+  const echecs = () => relay.socle.limiteur.lire('ip:machine:127.0.0.1').echecs;
+  const avant = echecs();
   assert.equal((await hubReq('GET', '/api/etat', undefined, 'faux-jeton-faux-jeton-faux-jeton')).status, 401);
+  assert.equal(echecs(), avant + 1, 'le jeton faux compte pour l’adresse, dans le limiteur persistant');
+  relay.db.prepare("DELETE FROM socle_essais WHERE cle = 'ip:machine:127.0.0.1'").run();
   assert.equal((await hubReq('GET', '/api/reglages')).status, 401, 'le jeton du Hub n’ouvre pas les réglages (session exigée)');
   assert.equal((await hubReq('GET', '/api/clients')).status, 401);
   assert.equal((await anonyme.get('/api/etat?x=1')).status, 400, 'un paramètre non déclaré est refusé');
@@ -346,7 +365,7 @@ test('routes à la main : créer, mettre en pause, retirer ; une cible morte est
   delete relay.socle.comptes.estRenforcee;
 });
 
-test('Telegram : un chat se lie par le code affiché, un autre code ne lie rien', async () => {
+test('Telegram : un chat se lie par le code affiché, un autre code ne lie rien ; seul le chat lié commande', async () => {
   relay.socle.comptes.estRenforcee = () => true;
   relay.magasin.poserReglage('telegram', { chat: '' });
   const o = await admin.post('/api/telegram/lier');
@@ -355,6 +374,15 @@ test('Telegram : un chat se lie par le code affiché, un autre code ne lie rien'
   assert.equal(relay.magasin.reglage('telegram').chat, '');
   await relay.telegram.recevoir('77', `/lier ${o.json.code}`);
   assert.equal(relay.magasin.reglage('telegram').chat, '77');
+  // Commandes actives : seul le chat lié est écouté.
+  relay.magasin.poserReglage('telegram', { commandes: true });
+  const pause = await admin.post('/api/routes', { hote: 'pause.exemple.fr', cible: 'hub-pause:80', mode: 'local' });
+  await relay.telegram.recevoir('78', '/pause pause.exemple.fr');
+  assert.equal(relay.magasin.route(pause.json.route.id).actif, true, 'un autre chat ne commande rien');
+  await relay.telegram.recevoir('77', '/pause pause.exemple.fr');
+  assert.equal(relay.magasin.route(pause.json.route.id).actif, false, 'le chat lié, oui');
+  relay.magasin.poserReglage('telegram', { commandes: false });
+  await admin.del(`/api/routes/${pause.json.route.id}`);
   // Cinq codes faux, d'où qu'ils viennent : le code affiché ne lie plus rien.
   relay.magasin.poserReglage('telegram', { chat: '' });
   const l = await admin.post('/api/telegram/lier');
@@ -393,7 +421,9 @@ test('services raccordés : jeton montré une fois, portée « soi » bornée à
   assert.equal(r.json.updated, true);
   assert.equal((await svc('POST', '/api/register', { subdomain: 'plan', upstream: '127.0.0.1:8095', mode: 'local' })).status, 400, 'pas plus en mise à jour');
   assert.equal(relay.magasin.routeParHote('plan.exemple.fr').cible, '192.0.2.20:8090');
-  assert.equal((await svc('POST', '/api/register', { host: 'carte.exemple.fr', upstream: 'x:80' })).status, 409, 'le nom d’un autre');
+  r = await svc('POST', '/api/register', { host: 'carte.exemple.fr', upstream: 'x:80' });
+  assert.equal(r.status, 409, 'le nom d’un autre');
+  assert.equal(r.json.error, 'carte.exemple.fr is already routed by another service.', 'le message du contrat (INTEGRATION.md)');
   assert.equal((await svc('GET', '/api/whoami')).json.routes.length, 1);
   assert.equal((await svc('GET', '/api/etat')).status, 403, 'portée « soi » : pas les autres routes');
   assert.equal((await svc('GET', '/api/reglages')).status, 401);
@@ -561,7 +591,7 @@ test('autorisation : chaque route balayée sans session, en lecture seule, et av
   }
 });
 
-test('autorisation : un jeton « routes » gère les routes, ni les réglages ni Cloudflare', async () => {
+test('autorisation : un jeton « routes » gère les routes, ni les réglages ni Cloudflare ; le jeton du Hub ni les comptes, ni les jetons de services, ni Telegram', async () => {
   relay.socle.comptes.estRenforcee = () => true;
   const c = await admin.post('/api/clients', { nom: 'gestionnaire', portee: 'routes' });
   delete relay.socle.comptes.estRenforcee;
@@ -583,6 +613,16 @@ test('autorisation : un jeton « routes » gère les routes, ni les réglages ni
   assert.equal((await admin.patch(`/api/routes/${r.json.route.id}`, { cible: '127.0.0.1:8095' })).status, 200, 'l’administrateur, lui, choisit');
   await admin.del(`/api/routes/${r.json.route.id}`);
   assert.deepEqual(relay.magasin.reglage('general').domaines, ['exemple.fr'], 'les domaines de base ne bougent pas');
+  // Le jeton du Hub : les routes, la publication, les domaines et Cloudflare ; ni les comptes, ni les jetons de services, ni Telegram.
+  const HUB_PERMIS = new Set([...PERMIS].filter(x => !/whoami|heartbeat|register/.test(x)).concat(['PUT /api/reglages/general', 'PUT /api/hub/publication', 'DELETE /api/hub/publication',
+    'PUT /api/hub/cloudflare', 'DELETE /api/hub/cloudflare', 'GET /api/hub/cloudflare/tunnel', 'PUT /api/hub/cloudflare/tunnel', 'DELETE /api/hub/cloudflare/tunnel', 'POST /api/cloudflare/apercu', 'POST /api/cloudflare/synchroniser']));
+  for (const r of relay.api.routeur.routes) {
+    const chemin = r.re.source.slice(1, -1).replace(/\\\//g, '/').replace('([^/]+)', 'AAAAAAAAAAAA');
+    if (r.options.public && chemin === '/api/health') continue;
+    if (HUB_PERMIS.has(`${r.methode} ${chemin}`)) continue;
+    const s = await hubReq(r.methode, chemin, r.methode === 'GET' || r.methode === 'DELETE' ? undefined : {});
+    assert.ok([401, 403].includes(s.status), `${r.methode} ${chemin} avec le jeton du Hub → ${s.status}`);
+  }
 });
 
 test('ligne de commande : sauvegarde chiffrée pour une clé publique, restaurée ailleurs ; secrets retirés pour un incident, Caddy suit', async () => {
