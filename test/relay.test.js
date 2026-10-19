@@ -496,18 +496,22 @@ test('reprise d’un Relay 1.x : routes, services (jetons toujours valables) et 
     { id: 'r1', name: 'Carte', host: 'carte.exemple.fr', upstream: '192.0.2.20:8090', tls: 'internal', enabled: true, owner: 'c1' },
     { id: 'r2', host: 'pve.exemple.fr', upstream: 'https://192.0.2.30:8006', tls: 'auto', verify: false },
     { id: 'r3', host: 'dyn.exemple.fr', upstream: 'docker://portainer:9000', tls: 'auto' },
+    { id: 'r4', host: 'entete.exemple.fr', upstream: '192.0.2.21:80', tls: 'auto', hostHeader: 'a b\r\nX-Injecte: 1' },
+    { id: 'r5', host: 'port.exemple.fr', upstream: '192.0.2.22:99999', tls: 'auto' },
   ] }));
   fs.writeFileSync(path.join(d, 'settings.json'), JSON.stringify({
     general: { domains: ['exemple.fr'], acmeEmail: 'ops@exemple.fr', probeMs: 20000 },
     telegram: { token: '123:abc', chat: '42', alerts: true, commands: true },
     cloudflare: { token: 'cf-ancien', accountId: 'acc', tunnelId: 'tun', enabled: true },
-    clients: [{ id: 'c1', name: 'carte', scope: 'own', tokenHash: empreinte('svc_ancien'), hint: '…cien', created: 1 }],
+    clients: [{ id: 'c1', name: 'carte', scope: 'own', tokenHash: empreinte('svc_ancien'), hint: '…cien', created: 1 },
+      { id: 'c2', name: 'Nom <b>libre</b>', scope: 'routes', tokenHash: empreinte('svc_autre'), created: 1 }],
   }));
   const db = ouvrirBase(path.join(d, 'base'));
   const coffre = new Coffre({ cle: Buffer.alloc(32, 7).toString('base64'), fichier: path.join(d, 'k') });
   const m = new Magasin(db, { coffre });
   const bilan = reprendre({ dossier: d, db, magasin: m, journal: new Journal(db), log: silence });
-  assert.deepEqual([bilan.routes, bilan.clients, bilan.ignorees], [2, 1, ['dyn.exemple.fr']]);
+  assert.deepEqual([bilan.routes, bilan.clients, bilan.ignorees], [2, 1, ['dyn.exemple.fr', 'entete.exemple.fr', 'port.exemple.fr']], 'contrôlées comme une saisie');
+  assert.equal(m.clientParJeton('svc_autre'), null, 'un nom de service hors du motif n’est pas repris');
   assert.equal(m.routeParHote('carte.exemple.fr').mode, 'local');
   assert.equal(m.routeParHote('pve.exemple.fr').mode, 'public');
   assert.equal(m.clientParJeton('svc_ancien').nom, 'carte', 'le jeton de la 1.x vaut toujours');

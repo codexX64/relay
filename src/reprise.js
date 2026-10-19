@@ -7,7 +7,10 @@
 // vient du Hub, avec les facteurs du socle.
 import fs from 'node:fs';
 import path from 'node:path';
-import { nouvelleRef, HOTE, CIBLE } from './base.js';
+import { nouvelleRef } from './base.js';
+import { normaliser } from './relais.js';
+
+const NOM_SERVICE = /^[a-z0-9][a-z0-9-]{1,39}$/;
 
 const MODE = { auto: 'public', internal: 'local', off: 'clair' };
 
@@ -23,23 +26,26 @@ export function reprendre({ dossier, db, magasin, journal, log = console }) {
   try {
     const ids = new Map();
     for (const c of Array.isArray(reglages.clients) ? reglages.clients : []) {
-      if (!c?.name || !/^[a-f0-9]{64}$/.test(c.tokenHash || '')) continue;
+      if (!NOM_SERVICE.test(String(c?.name || '').toLowerCase()) || !/^[a-f0-9]{64}$/.test(c.tokenHash || '')) continue;
       const id = nouvelleRef();
       ids.set(c.id, id);
       db.prepare('INSERT INTO clients(id, nom, portee, jeton, indice, cree, vu) VALUES(?,?,?,?,?,?,?)')
-        .run(id, String(c.name).toLowerCase().slice(0, 40), c.scope === 'routes' ? 'routes' : 'soi', c.tokenHash, String(c.hint || '…').slice(0, 8), Number(c.created) || Date.now(), Number(c.lastSeen) || null);
+        .run(id, String(c.name).toLowerCase(), c.scope === 'routes' ? 'routes' : 'soi', c.tokenHash, String(c.hint || '…').slice(0, 8), Number(c.created) || Date.now(), Number(c.lastSeen) || null);
       bilan.clients++;
     }
     for (const r of routes) {
-      const hote = String(r.host || '').toLowerCase(), cible = String(r.upstream || '');
-      // Une cible docker:// suivait un conteneur par le socket Docker, que
-      // Relay 2 ne monte plus : à republier depuis le Hub.
-      if (!HOTE.test(hote) || !CIBLE.test(cible)) { bilan.ignorees.push(hote || '(sans nom)'); continue; }
+      // Chaque route passe le contrôle d'une saisie (nom, cible, port, en-tête
+      // Host). Une cible docker:// suivait un conteneur par le socket Docker,
+      // que Relay 2 ne monte plus : à republier depuis le Hub.
+      let n;
+      try {
+        n = normaliser({ nom: String(r.name || ''), hote: String(r.host || ''), cible: String(r.upstream || ''), mode: MODE[r.tls] || 'public', cf: !!r.cf, verifier: !!r.verify, enteteHote: String(r.hostHeader || ''), actif: r.enabled !== false });
+      } catch { bilan.ignorees.push(String(r.host || '').toLowerCase().slice(0, 253) || '(sans nom)'); continue; }
       const t = Date.now();
       const client = r.owner ? ids.get(r.owner) || null : null;
       db.prepare(`INSERT OR IGNORE INTO routes(id, nom, hote, cible, mode, cf, verifier, entete_hote, actif, proprietaire, client, cree, maj)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(nouvelleRef(), String(r.name || '').slice(0, 60), hote, cible, r.cf ? 'clair' : (MODE[r.tls] || 'public'),
-        r.cf ? 1 : 0, r.verify ? 1 : 0, String(r.hostHeader || '').slice(0, 260), r.enabled === false ? 0 : 1, client ? 'service:1.x' : null, client, Number(r.created) || t, t);
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(nouvelleRef(), n.nom, n.hote, n.cible, n.mode,
+        n.cf ? 1 : 0, n.verifier ? 1 : 0, n.enteteHote, n.actif ? 1 : 0, client ? 'service:1.x' : null, client, Number(r.created) || t, t);
       bilan.routes++;
     }
     const g = reglages.general || {};
