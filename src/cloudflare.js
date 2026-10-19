@@ -58,7 +58,6 @@ export class Cloudflare {
     return out;
   }
 
-  // ---- le tunnel, réglé depuis le Hub ----
   /** Le compte qui porte les zones connectées : celui où vivent le tunnel et ses noms. */
   async compteDesZones() {
     const zones = (await this.appel('/zones?per_page=50&status=active')) || [];

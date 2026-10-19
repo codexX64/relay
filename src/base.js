@@ -80,7 +80,6 @@ export class Magasin {
     return bilan;
   }
 
-  // ---- réglages ----
   reglage(nom) {
     const l = this.db.prepare('SELECT valeur FROM reglages WHERE cle = ?').get(nom);
     let v = {};
@@ -106,7 +105,6 @@ export class Magasin {
     return r;
   }
 
-  // ---- routes ----
   ligne(r) {
     return r && { id: r.id, nom: r.nom, hote: r.hote, cible: r.cible, mode: r.mode, cf: !!r.cf, verifier: !!r.verifier, enteteHote: r.entete_hote, actif: !!r.actif, proprietaire: r.proprietaire, client: r.client, cree: r.cree, maj: r.maj };
   }
@@ -134,7 +132,6 @@ export class Magasin {
       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(r.id, r.nom, r.hote, r.cible, r.mode, r.cf ? 1 : 0, r.verifier ? 1 : 0, r.enteteHote || '', r.actif ? 1 : 0, r.proprietaire, r.client, r.cree, r.maj);
   }
 
-  // ---- services raccordés ----
   clientPublic(c) { return c && { id: c.id, nom: c.nom, portee: c.portee, indice: c.indice, cree: c.cree, vu: c.vu, tourne: c.tourne, routes: this.db.prepare('SELECT hote FROM routes WHERE client = ? ORDER BY hote').all(c.id).map(l => l.hote) }; }
   clients() { return this.db.prepare('SELECT * FROM clients ORDER BY nom').all().map(c => this.clientPublic(c)); }
   client(idOuNom) { return this.db.prepare('SELECT * FROM clients WHERE id = ? OR nom = ?').get(idOuNom, idOuNom) || null; }

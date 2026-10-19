@@ -183,7 +183,7 @@ export class Relais {
     return { faits, erreurs };
   }
 
-  // ---- santé : une requête HTTP vers la cible, à chaque tour ----
+  // Santé : une requête HTTP vers la cible, à chaque tour.
   // Un port ouvert ne dit pas qu'un service marche : la cible doit répondre
   // en HTTP, sans erreur serveur (5xx). Le nom demandé est celui de la route.
   sonde(route) {

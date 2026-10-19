@@ -96,7 +96,6 @@ const telecharger = async (chemin, nom) => {
   document.body.append(a); a.click(); a.remove();
 };
 
-// ---------- routes ----------
 // L'état tel qu'un navigateur le vivrait : nom servi par Caddy, cible qui répond en HTTP.
 function tagSante(r, caddy) {
   if (!r.actif) return h('span', { class: 'tag idle' }, h('i', { class: 'd' }), 'en pause');
@@ -192,7 +191,6 @@ async function formRoute(r, st, apres) {
   if (ok) { toast(nouveau ? 'Route créée.' : 'Route enregistrée.'); await apres(); }
 }
 
-// ---------- services raccordés ----------
 async function pageServices() {
   const liste = h('div', {});
   const peindre = async () => {
@@ -231,7 +229,6 @@ function montrerJeton(nom, jeton) {
     boutons: [{ texte: 'Copier', classe: 'solid', agir: async () => { await navigator.clipboard.writeText(jeton); toast('Jeton copié.'); return true; } }, { texte: 'Fermer', classe: 'flat', valeur: true }] });
 }
 
-// ---------- réglages ----------
 async function pageReglages() {
   const r = await api.get('/api/reglages');
   return h('div', { class: 'page' },

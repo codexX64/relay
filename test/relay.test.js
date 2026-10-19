@@ -21,7 +21,7 @@ const DNS = path.join(tmp, 'dns'); fs.mkdirSync(DNS);
 const JETON_HUB = 'jeton-du-hub-pour-les-essais-0123456789';
 const silence = { info() {}, warn() {}, error() {} };
 
-// ---- faux Caddy ----
+// Un faux Caddy : il garde la configuration reçue, refuse celle qu'on lui dit de refuser.
 const caddy = { conf: null, refuser: null, appels: 0 };
 const faux = http.createServer((req, res) => {
   let corps = '';
@@ -44,7 +44,6 @@ const faux = http.createServer((req, res) => {
   });
 });
 
-// ---- fausses API Cloudflare et Telegram ----
 const cf = { ingress: [{ hostname: 'autre.exemple.fr', service: 'http://ailleurs:80' }, { service: 'http_status:404' }], dns: [], ecritures: 0, n: 0, crees: [] };
 const tg = { messages: [], maj: [] };
 const externe = http.createServer((req, res) => {

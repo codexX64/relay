@@ -44,7 +44,6 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
   const r = new Routeur();
   const { portail, journal, limiteur } = socle;
 
-  // ---- qui appelle ----
   const presente = ctx => {
     const k = ctx.req.headers['x-relay-key'];
     if (typeof k === 'string' && k) return k;
@@ -127,7 +126,6 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
 
   r.get('/api/health', () => ({ ok: true }), { public: true });
 
-  // ---- état et routes ----
   r.get('/api/etat', ctx => {
     surLesRoutes(ctx, 'lecture');
     return { ...relais.etat(), domaines: magasin.reglage('general').domaines, ip: cfg.ip || null };
@@ -187,7 +185,6 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
     ctx.res.end(pem);
   }, { role: 'lecture', jeton: true });
 
-  // ---- publication par le Hub ----
   // Idempotente : appelée à chaque (re)déploiement d'un service, elle crée la
   // route la première fois et la met à jour ensuite. Un nom tenu par un autre
   // propriétaire n'est jamais pris.
@@ -218,7 +215,6 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
     return { ok: true, retirees: siennes.map(x => x.hote) };
   }, { role: 'admin', jeton: true, requete: { service: T(40, { requis: true, motif: NOM_SERVICE }), hote: T(253, { motif: HOTE }) } });
 
-  // ---- services raccordés (jetons) ----
   r.get('/api/clients', ctx => { session(ctx, { role: 'admin' }); return { clients: magasin.clients() }; }, { role: 'admin' });
   r.post('/api/clients', async ctx => {
     const s = session(ctx, { role: 'admin', renfort: true });
@@ -248,7 +244,7 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
     return { ok: true, routes: siennes.length };
   }, { role: 'admin' });
 
-  // ---- publication par un service raccordé (contrat de la 1.x) ----
+  // Publication par un service raccordé : le contrat de la 1.x (INTEGRATION.md).
   r.get('/api/whoami', ctx => {
     const c = service(ctx);
     return { service: c.nom, id: c.id, since: c.cree, routes: magasin.routes().filter(x => x.client === c.id).map(route1x) };
@@ -279,7 +275,6 @@ export function creerApi({ socle, cfg, magasin, relais, cloudflare, telegram }) 
     return { ok: true, removed: siennes.map(x => x.hote) };
   }, { jeton: true, public: true, requete: { host: T(253, { motif: HOTE }) } });
 
-  // ---- réglages ----
   r.get('/api/reglages', ctx => {
     session(ctx, { role: 'admin' });
     return {
