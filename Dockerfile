@@ -9,7 +9,8 @@
 # Image de base épinglée par empreinte (index multi-architecture amd64 +
 # arm64) : une étiquette peut être déplacée, une empreinte non.
 ARG NODE_IMAGE=node:24.21.0-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1
-ARG CADDY_VERSION=2.10.2
+# L'image de construction de Caddy aussi, et le module DNS à sa version.
+ARG CADDY_BUILDER=caddy:2.10.2-builder-alpine@sha256:4cff3ae272ea05842adb4546e35961e4947aeea65f80fa1eb62a35b960e84971
 
 # Caddy et son module DNS Cloudflare (certificats Let's Encrypt par le défi
 # DNS, pour les noms locaux d'un domaine chez Cloudflare), compilés depuis les
@@ -17,8 +18,8 @@ ARG CADDY_VERSION=2.10.2
 # méthode documentée pour ajouter un module). Chaque module Go téléchargé est
 # contrôlé par go.sum et la base de sommes publique (sum.golang.org) : un code
 # modifié en route ne compile pas. Binaire statique, posé seul sur une image vide.
-FROM caddy:${CADDY_VERSION}-builder-alpine AS caddy-binaire
-ARG CF_DNS_MODULE=github.com/caddy-dns/cloudflare
+FROM ${CADDY_BUILDER} AS caddy-binaire
+ARG CF_DNS_MODULE=github.com/caddy-dns/cloudflare@v0.2.4
 # XCADDY_SETCAP=0 : l'image de construction pose sinon une capacité de fichier
 # (cap_net_bind_service) sur le binaire, et le noyau refuse alors de le lancer
 # sous no-new-privileges (« exec /caddy: operation not permitted »). Les ports
