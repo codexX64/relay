@@ -233,12 +233,12 @@ async function pageReglages() {
   const r = await api.get('/api/reglages');
   return h('div', { class: 'page' },
     h('div', { class: 'headrow' }, h('div', {}, h('h1', { class: 'title', text: 'Réglages' }), h('p', { class: 'lede', text: 'Domaines, tunnel Cloudflare et alertes Telegram. Le compte et ses facteurs sont dans Sécurité.' }))),
-    h('div', { class: 'grille' }, carteGeneral(r.general), carteCloudflare(r.cloudflare), carteTelegram(r.telegram)));
+    h('div', { class: 'reglages' }, carteGeneral(r.general), carteCloudflare(r.cloudflare), carteTelegram(r.telegram)));
 }
 
 function carteGeneral(g) {
   const domaines = h('input', { class: 'field', value: g.domaines.join(', '), placeholder: 'exemple.fr, home.arpa', autocomplete: 'off', spellcheck: 'false' });
-  const acme = h('input', { class: 'field', type: 'email', value: g.acme, placeholder: 'contact pour Let’s Encrypt (facultatif)' });
+  const acme = h('input', { class: 'field', type: 'email', value: g.acme, placeholder: 'facultative' });
   const sonde = h('input', { class: 'field', type: 'number', min: 5, max: 3600, value: g.sondeSecondes });
   return h('div', { class: 'card' }, h('header', {}, h('h2', { text: 'Général' })), h('div', { class: 'cardbody' },
     h('label', { class: 'lbl', text: 'Domaines de base' }), domaines,
@@ -252,7 +252,7 @@ function carteGeneral(g) {
 }
 
 function carteCloudflare(c) {
-  const jeton = h('input', { class: 'field mono', type: 'password', placeholder: c.jeton ? 'jeton enregistré — en coller un autre pour le remplacer' : 'jeton d’API (Custom token)', autocomplete: 'off' });
+  const jeton = h('input', { class: 'field mono', type: 'password', placeholder: c.jeton ? 'jeton enregistré' : 'jeton d’API (Custom token)', autocomplete: 'off' });
   const compte = h('select', { class: 'field', 'aria-label': 'Compte' }, c.compte ? h('option', { value: c.compte, text: c.nomCompte || c.compte }) : h('option', { value: '', text: 'Teste le jeton pour choisir' }));
   const tunnel = h('select', { class: 'field', 'aria-label': 'Tunnel' }, c.tunnel ? h('option', { value: c.tunnel, text: c.nomTunnel || c.tunnel }) : h('option', { value: '', text: '—' }));
   const actif = interrupteur(c.actif, 'Publier par le tunnel');
@@ -277,8 +277,10 @@ function carteCloudflare(c) {
     toast('Cloudflare enregistré.');
   });
   return h('div', { class: 'card' }, h('header', {}, h('h2', { text: 'Cloudflare Tunnel' }), h('span', { class: 'note', text: c.actif ? 'actif' : 'coupé' })), h('div', { class: 'cardbody' },
-    h('p', { class: 'hint mt0', text: 'Jeton « Custom token » : Zone → DNS Edit sur ta zone, et Account → Cloudflare Tunnel Edit. Relay ne touche qu’aux entrées qu’il a créées.' }),
-    jeton, h('div', { class: 'row2 mt9' }, compte, tunnel),
+    h('p', { class: 'hint mt0', text: `Jeton « Custom token » : Zone → DNS Edit sur ta zone, et Account → Cloudflare Tunnel Edit. Relay ne touche qu’aux entrées qu’il a créées.${c.jeton ? ' Un jeton collé ici remplace celui enregistré.' : ''}` }),
+    jeton,
+    h('label', { class: 'lbl mt9', text: 'Compte' }), compte,
+    h('label', { class: 'lbl mt9', text: 'Tunnel' }), tunnel,
     ligneReglage('Publier par le tunnel', 'Les routes cochées « tunnel » reçoivent leur entrée d’ingress et leur CNAME.', actif),
     h('div', { class: 'actions mt12' },
       h('button', { class: 'btn sm', type: 'button', onclick: tester }, 'Tester le jeton'),
@@ -287,7 +289,7 @@ function carteCloudflare(c) {
 }
 
 function carteTelegram(t) {
-  const jeton = h('input', { class: 'field mono', type: 'password', placeholder: t.jeton ? 'jeton enregistré — en coller un autre pour le remplacer' : 'jeton du bot (@BotFather)', autocomplete: 'off' });
+  const jeton = h('input', { class: 'field mono', type: 'password', placeholder: t.jeton ? 'jeton enregistré' : 'jeton du bot (@BotFather)', autocomplete: 'off' });
   const alertes = interrupteur(t.alertes, 'Alertes');
   const commandes = interrupteur(t.commandes, 'Commandes');
   const statut = h('p', { class: 'hint mt0' });
@@ -295,6 +297,7 @@ function carteTelegram(t) {
   peindreStatut(t);
   return h('div', { class: 'card' }, h('header', {}, h('h2', { text: 'Telegram' })), h('div', { class: 'cardbody' },
     statut, jeton,
+    t.jeton ? h('p', { class: 'hint', text: 'Un jeton collé ici remplace celui enregistré.' }) : null,
     ligneReglage('Alertes', 'Une cible cesse ou reprend de répondre ; Caddy refuse une configuration.', alertes),
     ligneReglage('Commandes', '/etat, /routes, /sonder, /pause, /reprendre, /appliquer — depuis le chat lié seulement.', commandes),
     h('div', { class: 'actions mt12' },

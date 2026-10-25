@@ -17,3 +17,19 @@ details>summary{cursor:pointer;color:var(--muted);font-size:13px;margin-top:4px}
 .saisie-domaine select{flex:0 1 auto;max-width:58%;min-width:0;text-overflow:ellipsis}
 .saisie-domaine .point{color:var(--muted);font-family:var(--mono, monospace)}
 .pad-erreur{margin:0;padding:12px 18px}
+
+/* Réglages : trois cartes de front, deux puis la dernière en travers, puis
+   une seule colonne. Une carte étirée par sa rangée garde ses boutons
+   d'enregistrement en bas : la dernière zone s'allonge, sans vide au milieu. */
+.reglages{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--ecart);align-items:stretch}
+.reglages>.card{display:flex;flex-direction:column}
+.reglages>.card>.cardbody{flex:1;display:flex;flex-direction:column}
+.reglages>.card>.cardbody>.actions{margin-left:0}
+.reglages>.card>.cardbody>.actions:last-child{flex:1;align-items:flex-end;align-content:flex-end}
+@container stage (max-width:900px){
+  .reglages{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .reglages>:last-child:nth-child(odd){grid-column:1/-1}
+}
+@container stage (max-width:600px){
+  .reglages{grid-template-columns:minmax(0,1fr)}
+}
