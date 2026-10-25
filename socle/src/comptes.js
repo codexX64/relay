@@ -13,6 +13,7 @@
 //      sessions et laisse une trace ;
 //   3. personne n'inscrit un facteur à la place d'un autre : un administrateur
 //      invite, exige ou réinitialise, il ne pose jamais de secret.
+import net from 'node:net';
 import crypto from 'node:crypto';
 import { hacher, verifier as verifierMdp } from './argon.js';
 import { refus as refusMdp } from './motdepasse.js';
@@ -27,6 +28,9 @@ export const ROLES = ['admin', 'membre', 'lecture'];
 export const POLITIQUE_DEFAUT = Object.freeze({ motdepasse: 'facultatif', totp: 'facultatif', cle: 'requis_admin' });
 
 const RENFORT_MS = 5 * 60e3;
+// Dévoiler un secret (une clé d'API en clair) : une vérification faite exprès,
+// juste avant, et qui ne vaut que deux minutes — la session ouverte ne suffit pas.
+const DEVOILE_MS = 2 * 60e3;
 const PARTIELLE_MS = 10 * 60e3;
 const DEFI_MS = 5 * 60e3;
 const INVITATION_MS = 72 * 3600e3;
@@ -51,6 +55,11 @@ export class Comptes {
     // peut y naître. La règle « un administrateur tient une clé » est alors
     // inapplicable, et l'interface l'affiche en permanence.
     this.modeHttp = !!modeHttp;
+    // Et, requête par requête, l'endroit d'où l'on vient : une clé d'accès ne
+    // s'ouvre que sur HTTPS par un nom (cleIci). Ouvert par son adresse IP ou en
+    // HTTP simple, le service se comporte comme en mode HTTP pour cette requête :
+    // il n'exige ni ne propose de clé, et un administrateur qui n'en tient pas
+    // encore entre avec ses deux autres facteurs — la clé se crée par le nom.
     this.absolueMs = (sessions.absolueHeures ?? 12) * 3600e3;
     this.inactiviteMs = (sessions.inactiviteMinutes ?? 60) * 60e3;
     this.politiqueDemarrage = { ...POLITIQUE_DEFAUT, ...politique };
@@ -99,6 +108,8 @@ export class Comptes {
     // Domaine auquel la clé est liée (rpId) : le navigateur ne la présente
     // qu'à lui. Vide pour une clé d'avant, appris à sa première utilisation.
     if (!colonne.get('socle_cles', 'rp')) this.db.exec('ALTER TABLE socle_cles ADD COLUMN rp TEXT');
+    // Instant du dernier dévoilement vérifié de la session (voir devoiler).
+    if (!colonne.get('socle_sessions', 'devoile')) this.db.exec('ALTER TABLE socle_sessions ADD COLUMN devoile INTEGER NOT NULL DEFAULT 0');
   }
 
   // Rotation de la clé maîtresse, au démarrage. L'empreinte de contrôle dit
@@ -140,10 +151,13 @@ export class Comptes {
 
   trace(evt) { this.journal?.ecrire(evt); }
 
-  politique() {
+  /** Aucune clé d'accès ne peut exister ici : mode HTTP, ou requête par une adresse IP / en HTTP simple. */
+  sansCle(cleIci) { return this.modeHttp || cleIci === false; }
+
+  politique(cleIci) {
     const l = this.db.prepare("SELECT valeur FROM socle_reglages WHERE cle = 'politique'").get();
     const p = { ...this.politiqueDemarrage, ...(l ? JSON.parse(l.valeur) : {}) };
-    if (this.modeHttp && p.cle !== 'desactive') p.cle = 'facultatif';
+    if (this.sansCle(cleIci) && p.cle !== 'desactive') p.cle = 'facultatif';
     return p;
   }
 
@@ -161,21 +175,23 @@ export class Comptes {
   }
 
   // Ce que la politique exige de ce compte et qu'il ne détient pas encore.
-  manquants(compte) {
-    const p = this.politique();
+  manquants(compte, cleIci) {
+    const p = this.politique(cleIci);
+    const sansCle = this.sansCle(cleIci);
     const detenus = this.facteursDe(compte);
     const admin = compte.role === 'admin';
-    const exige = f => p[f] === 'requis' || (p[f] === 'requis_admin' && admin) || (f === 'cle' && compte.cle_exigee && !this.modeHttp);
+    const exige = f => p[f] === 'requis' || (p[f] === 'requis_admin' && admin) || (f === 'cle' && compte.cle_exigee && !sansCle);
     const out = FACTEURS.filter(f => exige(f) && !detenus[f]);
     const seconds = (detenus.totp ? 1 : 0) + (detenus.cle ? 1 : 0);
     // Règle 1 : un mot de passe seul ne suffit jamais.
     if (!seconds && !out.includes('totp') && !out.includes('cle')) out.push('second');
     // REQ-AUTH-013 : un administrateur tient deux facteurs, dont un résistant à
-    // l'hameçonnage — sauf en mode HTTP, où aucune clé ne peut exister.
+    // l'hameçonnage — exigé là où une clé peut exister (HTTPS par un nom) ;
+    // ailleurs, aucune clé ne peut naître, et le mot de passe + TOTP ouvrent.
     if (admin) {
       const n = (detenus.motdepasse ? 1 : 0) + seconds;
       if (n < 2 && !out.includes('second') && !out.includes('totp') && !out.includes('cle')) out.push('second');
-      if (!this.modeHttp && !detenus.cle && !out.includes('cle')) out.push('cle');
+      if (!sansCle && !detenus.cle && !out.includes('cle')) out.push('cle');
     }
     return out;
   }
@@ -190,22 +206,24 @@ export class Comptes {
   parIdentifiant(identifiant) { return this.db.prepare('SELECT * FROM socle_comptes WHERE identifiant = ?').get(normaliseIdentifiant(identifiant)) || null; }
   estInstalle() { return !!this.db.prepare('SELECT 1 FROM socle_comptes LIMIT 1').get(); }
 
-  publicDe(c) {
+  publicDe(c, cleIci) {
     const f = this.facteursDe(c);
     return {
       id: c.id, identifiant: c.identifiant, affichage: c.affichage, role: c.role, actif: !!c.actif,
       facteurs: { motdepasse: f.motdepasse, totp: f.totp, cles: f.nCles, secours: f.secours },
-      manquants: this.manquants(c), cree: c.cree, derniere: c.derniere,
+      manquants: this.manquants(c, cleIci), cree: c.cree, derniere: c.derniere,
       courriel: c.courriel_verifie ? c.courriel : null,
-      cle: this.regleCle(c),
+      cle: this.regleCle(c, cleIci),
     };
   }
 
-  // Ce que ce compte doit à la clé d'accès : « http » (aucune clé possible),
-  // « toujours » (administrateur ou politique du service), « exigee » (réglée
-  // pour ce compte) ou « facultative ».
-  regleCle(c) {
+  // Ce que ce compte doit à la clé d'accès : « http » (aucune clé possible sur
+  // ce service), « ailleurs » (aucune ici — adresse IP ou HTTP simple — mais
+  // par le nom en HTTPS), « toujours » (administrateur ou politique du
+  // service), « exigee » (réglée pour ce compte) ou « facultative ».
+  regleCle(c, cleIci) {
     if (this.modeHttp) return 'http';
+    if (cleIci === false) return 'ailleurs';
     const p = this.politique();
     if (c.role === 'admin' || p.cle === 'requis') return 'toujours';
     return c.cle_exigee ? 'exigee' : 'facultative';
@@ -240,7 +258,7 @@ export class Comptes {
     return l.valeur;
   }
 
-  async installer({ jeton, jetonAttendu, identifiant, motDePasse, affichage, ip, appareil }) {
+  async installer({ jeton, jetonAttendu, identifiant, motDePasse, affichage, ip, appareil, cleIci }) {
     const cles = ['installation', `ip:${ip}`];
     this.limiteur.controler(cles);
     if (this.estInstalle()) throw erreur(409, 'Ce service est déjà configuré.');
@@ -262,14 +280,14 @@ export class Comptes {
     });
     this.limiteur.reussite(cles);
     this.trace({ acteur: c.id, action: 'installation', objet: c.id, ip });
-    return this.ouvrirSession(this.compte(c.id), { facteurs: ['motdepasse'], ip, appareil });
+    return this.ouvrirSession(this.compte(c.id), { facteurs: ['motdepasse'], ip, appareil, cleIci });
   }
 
   // Le cookie porte un jeton aléatoire ; la base n'en garde que l'empreinte.
-  ouvrirSession(compte, { facteurs, ip, appareil, partielle = false, rotation = false }) {
+  ouvrirSession(compte, { facteurs, ip, appareil, cleIci, partielle = false, rotation = false }) {
     const t = this.maintenant();
     const jeton = aleatoire(32);
-    const niveau = partielle ? 'partiel' : (this.manquants(compte).length ? 'inscription' : 'complet');
+    const niveau = partielle ? 'partiel' : (this.manquants(compte, cleIci).length ? 'inscription' : 'complet');
     const expire = t + (partielle ? PARTIELLE_MS : this.absolueMs);
     const csrf = aleatoire(24);
     this.db.prepare('INSERT INTO socle_sessions(id, compte, niveau, facteurs, csrf, cree, vue, expire, renfort, ip, appareil) VALUES(?,?,?,?,?,?,?,?,?,?,?)')
@@ -283,12 +301,13 @@ export class Comptes {
 
   // Remplace une session par une autre (identifiant neuf à chaque changement de
   // niveau ou de privilège : pas de fixation possible).
-  promouvoir(session, facteurs, { ip, appareil }) {
+  promouvoir(session, facteurs, { ip, appareil, cleIci }) {
     this.db.prepare('DELETE FROM socle_sessions WHERE id = ?').run(session.id);
-    return this.ouvrirSession(this.compte(session.compte), { facteurs, ip, appareil, rotation: session.niveau !== 'partiel' });
+    return this.ouvrirSession(this.compte(session.compte), { facteurs, ip, appareil, cleIci, rotation: session.niveau !== 'partiel' });
   }
 
-  session(jeton) {
+  // cleIci : d'où vient la requête (portail) ; le niveau de la session en dépend.
+  session(jeton, cleIci) {
     if (!jeton || typeof jeton !== 'string' || jeton.length > 100) return null;
     const id = sha256hex(jeton);
     const s = this.db.prepare('SELECT * FROM socle_sessions WHERE id = ?').get(id);
@@ -300,10 +319,12 @@ export class Comptes {
     }
     const compte = this.compte(s.compte);
     if (!compte || !compte.actif) { this.db.prepare('DELETE FROM socle_sessions WHERE id = ?').run(id); return null; }
-    // Le niveau suit la politique en cours : un facteur devenu requis ramène la
-    // session en inscription dès la requête suivante.
+    // Le niveau suit la politique en cours et l'endroit d'où l'on vient : un
+    // facteur devenu requis ramène la session en inscription dès la requête
+    // suivante ; un administrateur sans clé est complet par son adresse IP,
+    // en inscription dès qu'il ouvre le service par son nom en HTTPS.
     let niveau = s.niveau;
-    if (niveau !== 'partiel') niveau = this.manquants(compte).length ? 'inscription' : 'complet';
+    if (niveau !== 'partiel') niveau = this.manquants(compte, cleIci).length ? 'inscription' : 'complet';
     if (t - s.vue > 60e3 || niveau !== s.niveau) this.db.prepare('UPDATE socle_sessions SET vue = ?, niveau = ? WHERE id = ?').run(t, niveau, id);
     return { ...s, niveau, facteurs: JSON.parse(s.facteurs), compteLigne: compte };
   }
@@ -331,6 +352,74 @@ export class Comptes {
     if (!r.changes) throw erreur(404, 'Session inconnue.');
   }
   fermerAutres(compteId, sauf) { this.db.prepare('DELETE FROM socle_sessions WHERE compte = ? AND id != ?').run(compteId, sauf || ''); }
+  // Dévoiler un secret en clair : la clé d'accès si ce domaine en ouvre une,
+  // sinon le mot de passe ET le code TOTP ensemble ; le mot de passe seul si le
+  // compte n'a rien d'autre. Plus exigeant que le renfort : on montre quelque
+  // chose qui ne se reprend pas une fois vu.
+  methodesDevoilement(c, rp) {
+    const f = this.facteursDe(c);
+    if (f.cle && !this.modeHttp && this.clesUtilisables(c.id, rp).length) return ['cle'];
+    if (f.motdepasse && f.totp) return ['motdepasse+totp'];
+    if (f.totp) return ['totp'];
+    return ['motdepasse'];
+  }
+
+  optionsDevoilementCle(session, ctx) {
+    this.exigerContexteCle(ctx);
+    const autorises = this.clesUtilisables(session.compte, ctx.rpId).map(l => l.cred);
+    if (!autorises.length) throw erreur(400, 'Aucune clé d’accès de ce compte n’est liée à cette adresse.');
+    const defi = this.poserDefi(session.id, 'devoiler', session.compte);
+    return wa.optionsAuthentification({ rpId: ctx.rpId, defi, autorises });
+  }
+
+  async devoiler(session, { methode, code, motDePasse, reponse, ctx, ip }) {
+    if (session.delegue) throw erreur(403, 'Dévoiler un secret est réservé à une personne connectée.');
+    const c = session.compteLigne;
+    const permises = this.methodesDevoilement(c, session.rp);
+    if (!permises.includes(methode)) throw erreur(400, 'Utilise ta vérification la plus forte.', { methodes: permises });
+    const cles = [`ip:${ip}`, `compte:${c.identifiant}`];
+    this.limiteur.controler(cles);
+    let ok = false;
+    const mdpOk = async () => (await verifierMdp(String(motDePasse ?? ''), c.mdp)).ok;
+    const totpOk = () => {
+      const pas = totp.verifier(this.coffre.ouvre('totp', c.totp, c.id), code, { dernierPas: c.totp_pas, t: this.maintenant() });
+      if (pas === null) return false;
+      this.db.prepare('UPDATE socle_comptes SET totp_pas = ? WHERE id = ?').run(pas, c.id);
+      return true;
+    };
+    if (methode === 'motdepasse') ok = await mdpOk();
+    else if (methode === 'totp') ok = totpOk();
+    else if (methode === 'motdepasse+totp') ok = (await mdpOk()) && totpOk();
+    else if (methode === 'cle') {
+      this.exigerContexteCle(ctx);
+      const { defi } = this.prendreDefi(session.id, 'devoiler');
+      const cle = this.cleEnregistree(reponse?.id);
+      if (cle && cle.compte === c.id) {
+        try {
+          const r = wa.verifierAuthentification({ reponse, defi, origines: [ctx.origine], rpId: ctx.rpId, cle: { ...cle, handle: c.handle } });
+          this.db.prepare('UPDATE socle_cles SET compteur = ?, utilisee = ?, rp = ? WHERE id = ?').run(r.compteur, this.maintenant(), ctx.rpId, cle.id);
+          ok = true;
+        } catch { ok = false; }
+      }
+    }
+    if (!ok) {
+      this.limiteur.echec(cles);
+      this.trace({ acteur: c.id, action: 'devoilement', ip, resultat: 'refus', details: { methode } });
+      throw erreur(401, 'Vérification refusée.');
+    }
+    this.limiteur.reussite([cles[1]]);
+    this.trace({ acteur: c.id, action: 'devoilement', ip, details: { methode } });
+    const t = this.maintenant();
+    this.db.prepare('UPDATE socle_sessions SET devoile = ? WHERE id = ?').run(t, session.id);
+    return { devoileJusqua: t + DEVOILE_MS };
+  }
+  estDevoilee(session) { return !!session.devoile && this.maintenant() - session.devoile < DEVOILE_MS; }
+  // Jamais pour le Hub délégué ni pour un jeton : seule une personne, dans son
+  // navigateur, voit un secret en clair. L'assistant n'a aucune route vers ici.
+  exigerDevoilement(session) {
+    if (!session || session.delegue) throw erreur(403, 'Dévoiler un secret est réservé à une personne connectée.');
+    if (!this.estDevoilee(session)) throw erreur(403, 'Confirme ton identité pour dévoiler ce secret.', { devoiler: true, methodes: this.methodesDevoilement(session.compteLigne, session.rp) });
+  }
   fermerToutes(compteId) { this.db.prepare('DELETE FROM socle_sessions WHERE compte = ?').run(compteId); }
   fermerTout() { this.db.prepare('DELETE FROM socle_sessions').run(); }
 
@@ -373,7 +462,7 @@ export class Comptes {
 
   clesLimiteur(ip, identifiant) { return [`ip:${ip}`, `compte:${normaliseIdentifiant(identifiant)}`]; }
 
-  async connexionMotDePasse({ identifiant, motDePasse, preuve, ip, appareil }) {
+  async connexionMotDePasse({ identifiant, motDePasse, preuve, ip, appareil, cleIci }) {
     if (this.politique().motdepasse === 'desactive') throw erreur(403, 'La connexion par mot de passe est désactivée : utilise ta clé d’accès.');
     const cles = this.clesLimiteur(ip, identifiant);
     if (this.limiteur.controler(cles) && !this.limiteur.verifierPreuve(preuve)) {
@@ -390,16 +479,16 @@ export class Comptes {
     const f = this.facteursDe(c);
     if (f.totp || f.cle) {
       this.trace({ acteur: c.id, action: 'connexion.motdepasse', ip, resultat: 'second-facteur' });
-      const s = this.ouvrirSession(c, { facteurs: ['motdepasse'], ip, appareil, partielle: true });
-      return { ...s, etape: 'second', methodes: this.methodesSecondes(c) };
+      const s = this.ouvrirSession(c, { facteurs: ['motdepasse'], ip, appareil, cleIci, partielle: true });
+      return { ...s, etape: 'second', methodes: this.methodesSecondes(c, cleIci) };
     }
     this.limiteur.reussite([cles[1]]);
     this.trace({ acteur: c.id, action: 'connexion', ip, details: { facteurs: 'motdepasse' } });
     // Aucun second facteur détenu : la session ne sert qu'à en inscrire un.
-    return { ...this.ouvrirSession(c, { facteurs: ['motdepasse'], ip, appareil }), etape: 'inscription' };
+    return { ...this.ouvrirSession(c, { facteurs: ['motdepasse'], ip, appareil, cleIci }), etape: 'inscription' };
   }
 
-  connexionTotp(session, code, { ip, appareil }) {
+  connexionTotp(session, code, { ip, appareil, cleIci }) {
     if (session?.niveau !== 'partiel') throw erreur(401, 'Recommence la connexion.');
     const c = session.compteLigne;
     const cles = [`ip:${ip}`, `compte:${c.identifiant}`];
@@ -413,15 +502,15 @@ export class Comptes {
     this.db.prepare('UPDATE socle_comptes SET totp_pas = ? WHERE id = ?').run(pas, c.id);
     this.limiteur.reussite([cles[1]]);
     this.trace({ acteur: c.id, action: 'connexion', ip, details: { facteurs: 'motdepasse+totp' } });
-    return this.promouvoir(session, [...session.facteurs, 'totp'], { ip, appareil });
+    return this.promouvoir(session, [...session.facteurs, 'totp'], { ip, appareil, cleIci });
   }
 
-  methodesSecondes(c) {
+  methodesSecondes(c, cleIci) {
     const f = this.facteursDe(c);
-    return [...(f.totp ? ['totp'] : []), ...(f.cle && !this.modeHttp ? ['cle'] : []), ...(f.secours ? ['secours'] : [])];
+    return [...(f.totp ? ['totp'] : []), ...(f.cle && !this.sansCle(cleIci) ? ['cle'] : []), ...(f.secours ? ['secours'] : [])];
   }
 
-  async connexionSecours(session, code, { ip, appareil }) {
+  async connexionSecours(session, code, { ip, appareil, cleIci }) {
     if (session?.niveau !== 'partiel') throw erreur(401, 'Recommence la connexion.');
     const c = session.compteLigne;
     const cles = [`ip:${ip}`, `compte:${c.identifiant}`];
@@ -437,7 +526,7 @@ export class Comptes {
     this.alerter(c, 'secours.utilise', { ip, restants });
     // Un code de secours est une porte de sortie : les autres sessions tombent.
     this.fermerToutes(c.id);
-    return { ...this.ouvrirSession(c, { facteurs: [...session.facteurs, 'secours'], ip, appareil }), restants };
+    return { ...this.ouvrirSession(c, { facteurs: [...session.facteurs, 'secours'], ip, appareil, cleIci }), restants };
   }
 
   async consommerSecours(c, saisi) {
@@ -471,7 +560,7 @@ export class Comptes {
   }
 
   exigerContexteCle(ctx) {
-    if (!ctx?.securise || !ctx.origine || !ctx.rpId) throw erreur(400, 'Les clés d’accès exigent une connexion HTTPS (ou localhost).');
+    if (!ctx?.securise || !ctx.origine || !ctx.rpId) throw erreur(400, 'Les clés d’accès exigent une connexion HTTPS par un nom, pas par une adresse IP (ou localhost).');
   }
 
   cleEnregistree(credId) { return this.db.prepare('SELECT * FROM socle_cles WHERE cred = ?').get(String(credId || '')) || null; }
@@ -486,7 +575,7 @@ export class Comptes {
     return wa.optionsAuthentification({ rpId: ctx.rpId, defi, autorises });
   }
 
-  connexionCle({ lien, session, reponse, ctx, ip, appareil }) {
+  connexionCle({ lien, session, reponse, ctx, ip, appareil, cleIci }) {
     this.exigerContexteCle(ctx);
     const { defi, compte: attenduId } = this.prendreDefi(lien, 'connexion');
     const cle = this.cleEnregistree(reponse?.id);
@@ -512,7 +601,7 @@ export class Comptes {
     const facteurs = session?.niveau === 'partiel' && session.compte === c.id ? [...session.facteurs, 'cle'] : ['cle'];
     this.trace({ acteur: c.id, action: 'connexion', ip, details: { facteurs: facteurs.join('+') } });
     if (session?.niveau === 'partiel') this.fermerSession(session.id);
-    return this.ouvrirSession(c, { facteurs, ip, appareil });
+    return this.ouvrirSession(c, { facteurs, ip, appareil, cleIci });
   }
 
   // En inscription forcée, poser un facteur n'exige pas de renfort : la session
@@ -679,6 +768,8 @@ export class Comptes {
   // Les clés d'un compte que ce domaine peut ouvrir : liées à lui, ou d'avant
   // l'apprentissage du domaine (rp vide).
   clesUtilisables(compteId, rp) {
+    // Une adresse IP : aucune clé ne s'y ouvre, le navigateur n'en présente que sur un nom.
+    if (rp && net.isIP(rp.replace(/^\[|\]$/g, ''))) return [];
     const toutes = this.db.prepare('SELECT cred, rp FROM socle_cles WHERE compte = ?').all(compteId);
     return rp ? toutes.filter(k => !k.rp || k.rp === rp) : toutes;
   }
@@ -693,7 +784,7 @@ export class Comptes {
 
   async renforcer(session, { methode, code, motDePasse, reponse, ctx, ip }) {
     const c = session.compteLigne;
-    const permises = this.methodesRenfort(c, ctx?.securise ? ctx.rpId : undefined);
+    const permises = this.methodesRenfort(c, session.rp);
     if (!permises.includes(methode)) throw erreur(400, 'Utilise ton facteur le plus fort.', { methodes: permises });
     const cles = [`ip:${ip}`, `compte:${c.identifiant}`];
     this.limiteur.controler(cles);
@@ -899,7 +990,7 @@ export class Comptes {
   // Invitation ou réinitialisation : même geste, un mot de passe neuf posé par
   // la personne elle-même. L'invitation ouvre une session d'inscription ; la
   // réinitialisation n'ouvre rien, la connexion normale reprend ensuite.
-  async utiliserJeton({ usage, jeton, motDePasse, ip, appareil }) {
+  async utiliserJeton({ usage, jeton, motDePasse, ip, appareil, cleIci }) {
     const cles = [`ip:${ip}`, `jeton:${usage}`];
     this.limiteur.controler(cles);
     const avant = this.jetonValide(usage, jeton);
@@ -914,7 +1005,7 @@ export class Comptes {
     this.limiteur.liberer(`compte:${c.identifiant}`);
     this.trace({ acteur: c.id, action: usage === 'invitation' ? 'compte.invitation_acceptee' : 'compte.reinit', objet: c.id, ip });
     if (usage === 'reinit') { this.alerter(c, 'motdepasse.reinitialise', { ip }); return { etape: 'connexion' }; }
-    return { ...this.ouvrirSession(this.compte(c.id), { facteurs: ['motdepasse'], ip, appareil }), etape: 'inscription' };
+    return { ...this.ouvrirSession(this.compte(c.id), { facteurs: ['motdepasse'], ip, appareil, cleIci }), etape: 'inscription' };
   }
 
   // « Ce n'était pas moi » : toutes les sessions tombent, y compris celle-ci.

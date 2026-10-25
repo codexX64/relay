@@ -7,7 +7,7 @@ import path from 'node:path';
 import { ErreurHttp } from './outils.js';
 import { requeteCourante } from './requete.js';
 
-// ---- mandataires de confiance ----
+// mandataires de confiance
 // Seuls les relais listés (SOCLE_PROXYS, en CIDR) peuvent dire qui est le
 // client. Sans cette liste, X-Forwarded-For est ignoré : sinon n'importe qui
 // choisit l'adresse que le limiteur et le journal enregistrent.
@@ -56,7 +56,7 @@ export function origineDe(req, bl) {
   return `${estSecurise(req, bl) ? 'https' : 'http'}://${hote.toLowerCase()}`;
 }
 
-// ---- en-têtes ----
+// en-têtes
 export function nonceCsp() { return crypto.randomBytes(16).toString('base64'); }
 
 export function politiqueContenu({ nonce, connect = [], img = [], media = [], frame = [], secure, stylesEnLigne = false }) {
@@ -88,7 +88,7 @@ export function entetesSecurite(res, { secure, csp, hote, permissions = 'camera=
   if (secure && !hoteLocal(hote)) res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
 }
 
-// ---- cookies ----
+// cookies
 export function lireCookies(entete = '') {
   const out = {};
   for (const morceau of String(entete).split(';')) {
@@ -109,7 +109,7 @@ export function poseCookie(res, nom, valeur, { maxAge, secure, sameSite = 'Stric
   res.setHeader('Set-Cookie', [...(Array.isArray(avant) ? avant : avant ? [avant] : []), attributs.join('; ')]);
 }
 
-// ---- corps ----
+// corps
 export function lireCorps(req, { limite = 64 * 1024, json = true } = {}) {
   // Un formulaire HTML ne sait pas envoyer application/json sans pré-vol CORS :
   // l'exiger sur toute écriture ferme la soumission silencieuse d'un autre site.
@@ -158,6 +158,12 @@ export const erreursInternes = () => internes;
 
 export function repondreErreur(res, e, { journal = console } = {}) {
   const status = e instanceof ErreurHttp || (e?.status >= 400 && e?.status < 500) ? e.status : 500;
+  // 502, 503 et 504 levés en ErreurHttp portent un message écrit pour l'utilisateur
+  // (relais SMTP, service amont injoignable) : il passe tel quel, et reste journalisé.
+  if (e instanceof ErreurHttp && [502, 503, 504].includes(status)) {
+    journal.warn?.(`[amont ${status}] ${String(e.message).slice(0, 300)}`);
+    return repondreJson(res, status, { error: e.message, ...(e.details ? { details: e.details } : {}) });
+  }
   if (status >= 500) {
     internes++;
     const ref = requeteCourante() || crypto.randomBytes(4).toString('hex');
@@ -167,7 +173,7 @@ export function repondreErreur(res, e, { journal = console } = {}) {
   repondreJson(res, status, { error: e.message, ...(e.details ? { details: e.details } : {}) });
 }
 
-// ---- fichiers statiques ----
+// fichiers statiques
 const TYPES = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.webp': 'image/webp',
@@ -176,10 +182,21 @@ const TYPES = {
 
 // Les gammes de SOMA. Une page HTML qui porte data-gamme="__GAMME__" la reçoit
 // rendue côté serveur : aucun éclair d'une gamme à l'autre au chargement.
-export const GAMMES = ['soma', 'console'];
+export const GAMMES = ['soma', 'console', 'exploitation', 'lavande'];
 
 // Renvoie false si le fichier n'existe pas (l'appelant décide du 404).
-export function servirFichier(req, res, racine, chemin, { nonce, gamme = 'soma', cache = 'no-cache' } = {}) {
+// Fichiers de l'interface sous /v/<version>/ : l'adresse change avec la
+// version, si bien qu'aucun cache — navigateur, Cloudflare, relais — ne
+// rend l'ancien fichier après une mise à jour. Une version périmée (une page
+// gardée en cache) est servie quand même, sans cache durable.
+const VERSION_SURE = /^[\w.+-]{1,40}$/;
+export function cheminVersionne(chemin, version) {
+  const m = /^\/v\/([^/]{1,40})(\/.*)$/.exec(chemin);
+  if (!m) return { chemin, durable: false };
+  return { chemin: m[2], durable: VERSION_SURE.test(String(version)) && m[1] === String(version) };
+}
+
+export function servirFichier(req, res, racine, chemin, { nonce, gamme = 'soma', cache = 'no-cache', version = '' } = {}) {
   let rel;
   try { rel = decodeURIComponent(chemin); } catch { return false; }
   if (rel.includes('\0')) return false;
@@ -193,7 +210,8 @@ export function servirFichier(req, res, racine, chemin, { nonce, gamme = 'soma',
   const type = TYPES[ext];
   if (!type) return false;
   if (ext === '.html') {
-    const html = fs.readFileSync(plein, 'utf8').replaceAll('__NONCE__', nonce || '').replaceAll('__GAMME__', GAMMES.includes(gamme) ? gamme : 'soma');
+    const html = fs.readFileSync(plein, 'utf8').replaceAll('__NONCE__', nonce || '').replaceAll('__GAMME__', GAMMES.includes(gamme) ? gamme : 'soma')
+      .replaceAll('__VERSION__', VERSION_SURE.test(String(version)) ? String(version) : '0');
     res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store', 'Content-Length': Buffer.byteLength(html) });
     res.end(req.method === 'HEAD' ? undefined : html);
     return true;
@@ -206,7 +224,7 @@ export function servirFichier(req, res, racine, chemin, { nonce, gamme = 'soma',
   return true;
 }
 
-// ---- routeur ----
+// routeur
 // Motifs à segments nommés (« /api/conversation/:id »). Chaque paramètre est
 // décodé une fois ; un encodage invalide ne correspond à aucune route.
 export class Routeur {
@@ -237,7 +255,7 @@ export class Routeur {
   }
 }
 
-// ---- débit par adresse ----
+// débit par adresse
 // Fenêtre glissante en mémoire : le service tourne en un seul processus
 // longue durée, et ce plafond ne protège que contre l'emballement. Les
 // essais d'authentification ont leur propre limiteur, persistant.
