@@ -1,6 +1,6 @@
 // Un Relay de démonstration : un faux Caddy sur un socket Unix (il garde ce
 // qu'on lui pousse), des routes de chaque sorte, et la porte du socle à ouvrir.
-//   node outils/vitrine.mjs 8196
+//   node outils/vitrine.mjs 8196   (SOCLE_THEME=console|exploitation|lavande pour une autre gamme)
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -21,7 +21,7 @@ await new Promise(r => http.createServer((req, res) => {
   });
 }).listen(socket, r));
 const jeton = 'jeton-installation-de-la-vitrine-relay';
-const relay = await demarrer({ DATA_DIR: path.join(dossier, 'data'), PORT: String(port), HOTE: '127.0.0.1', RELAY_CADDY_SOCKET: socket, SOCLE_JETON_INSTALLATION: jeton, RELAY_HUB_TOKEN: 'jeton-du-hub-de-la-vitrine-0123456789' }, { log: { info() {}, warn() {}, error() {} } });
+const relay = await demarrer({ DATA_DIR: path.join(dossier, 'data'), PORT: String(port), HOTE: '127.0.0.1', RELAY_CADDY_SOCKET: socket, SOCLE_JETON_INSTALLATION: jeton, RELAY_HUB_TOKEN: 'jeton-du-hub-de-la-vitrine-0123456789', ...(process.env.SOCLE_THEME ? { SOCLE_THEME: process.env.SOCLE_THEME } : {}) }, { log: { info() {}, warn() {}, error() {} } });
 relay.magasin.poserReglage('general', { domaines: ['home.arpa', 'exemple.org'] });
 for (const r of [
   { hote: 'mapmylan.home.arpa', cible: 'hub-mapmylan:8090', mode: 'local', nom: 'MapMyLAN' },
