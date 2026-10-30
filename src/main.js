@@ -12,7 +12,7 @@ import { Telegram } from './telegram.js';
 import { reprendre } from './reprise.js';
 import { creerApi } from './api.js';
 import {
-  Debit, ErreurHttp, appliquerReglages, demarrerSocle, superviser, entetesSecurite, envelopper, nonceCsp, politiqueContenu,
+  Debit, ErreurHttp, appliquerReglages, demarrerSocle, lireNouveautes, superviser, entetesSecurite, envelopper, nonceCsp, politiqueContenu,
   repondreErreur, repondreJson, servirFichier,
 } from '../socle/src/index.js';
 
@@ -28,7 +28,8 @@ export async function demarrer(envBrut = process.env, { log = CONSOLE } = {}) {
   const db = ouvrirBase(cfg.donnees);
   const socle = await demarrerSocle({
     service: { id: 'relay', nom: 'Relay', contactSecurite: CONTACT_SECURITE }, db, dossier: cfg.donnees, env, log,
-    assistant: { reglages: REGLAGES_RELAY, spec: SPEC_RELAY, version: VERSION },
+    assistant: { reglages: REGLAGES_RELAY, spec: SPEC_RELAY, version: VERSION, controler: lireConfigRelay },
+    version: VERSION, nouveautes: lireNouveautes(new URL('../nouveautes.json', import.meta.url)),
   });
   const magasin = new Magasin(db, { coffre: socle.coffre });
   let bilan;

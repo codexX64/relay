@@ -62,7 +62,7 @@ RUN apk add --no-cache tini \
  && addgroup -S -g 10001 relay && adduser -S -G relay -u 10001 -H -s /sbin/nologin relay \
  && mkdir -p /data /run/caddy /run/dns && chown relay:relay /data /run/dns && chmod 700 /data && chmod 755 /run/dns && chown 10002:10002 /run/caddy && chmod 755 /run/caddy
 WORKDIR /app
-COPY package.json ./
+COPY package.json nouveautes.json ./
 COPY socle ./socle
 COPY src ./src
 COPY web ./web
