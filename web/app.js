@@ -8,10 +8,25 @@ import {
   toast, confirmer, dialogue, feuille, ajouterPictos,
 } from '/socle/compte.js';
 
+// Le logo de Relay, dans la couleur du texte : la marque de la barre et de
+// l'écran de connexion (même tracé que l'icône de l'onglet).
+const LOGO_NS = 'http://www.w3.org/2000/svg';
+function logo(taille = 16) {
+  const s = document.createElementNS(LOGO_NS, 'svg');
+  s.setAttribute('width', taille); s.setAttribute('height', taille);
+  s.setAttribute('viewBox', '0 0 214 214'); s.setAttribute('aria-hidden', 'true'); s.setAttribute('class', 'logo');
+  const p = document.createElementNS(LOGO_NS, 'path');
+  p.setAttribute('d', 'M204.71 98.49 204.07 92.51 203 86.29 201.53 80.15 199.77 74.4 197.54 68.5 194.94 62.75 191.97 57.17 188.65 51.8 184.99 46.66 181.01 41.76 176.93 37.34 172.37 32.98 167.77 29.11 162.69 25.36 157.38 21.94 151.87 18.87 146.44 16.29 140.58 13.93 134.58 11.96 128.47 10.38 122.57 9.24 116.31 8.44 110.01 8.05 103.99 8.05 97.69 8.44 91.43 9.24 85.53 10.38 79.42 11.96 73.42 13.93 67.56 16.29 62.13 18.87 53.56 23.85 45.53 29.68 38.13 36.28 31.24 43.83 25.35 51.8 20.15 60.6 15.9 69.89 12.71 79.28 11.25 85.12 10.15 91.03 9.41 96.99 9.05 102.99 9 206 37 206 37.01 104.93 37.53 97.43 38.84 90.03 40.95 82.82 43.81 75.88 47.52 69.1 51.82 62.93 56.75 57.27 62.43 52.03 68.47 47.56 74.95 43.77 81.01 41 87.09 38.89 93.34 37.35 99.71 36.38 106.14 36.01 112.58 36.22 119.18 37.07 125.46 38.48 131.59 40.46 137.51 43 143.17 46.07 148.7 49.78 153.69 53.85 158.43 58.52 162.58 63.44 166.25 68.73 170.28 76.07 173.47 84.04 175.61 92.13 176.79 100.64 177 105.79 177 206 205 206 204.99 104.8ZM161.49 89.29 158.6 81.79 154.59 74.62 149.58 68.11 143.83 62.5 137.2 57.66 130.1 53.89 122.54 51.16 114.5 49.5 106.3 49 98.29 49.67 90.45 51.45 82.79 54.4 75.62 58.41 69.24 63.3 65.6 66.82 62.28 70.66 59.32 74.77 56.73 79.13 54.54 83.7 52.77 88.45 51.42 93.34 50.52 98.33 50 105.65 50 206 71 206 71.01 105.12 71.24 101.81 71.78 98.54 72.61 95.34 73.78 92.12 76.18 87.4 79.24 83.08 82.82 79.33 87 76.07 91.61 73.46 96.55 71.55 101.72 70.39 107 70 112.28 70.39 117.45 71.55 122.39 73.46 126.91 76.01 131.09 79.25 134.76 83.08 137.82 87.4 140.22 92.12 141.39 95.34 142.22 98.54 142.76 101.81 142.99 105.12 143 206 164 206 164 105.3 163.3 97.12ZM128.66 98.25 127.01 94.66 124.82 91.46 122.13 88.68 119.01 86.38 115.54 84.64 111.83 83.51 107.92 83.02 104.04 83.19 100.26 84.01 96.66 85.46 93.36 87.48 90.44 90.04 87.99 93.05 86.09 96.42 84.57 100.89 84 105.58 84 206 130 206 130 105.86 129.65 102Z');
+  p.setAttribute('fill', 'currentColor');
+  p.setAttribute('fill-rule', 'evenodd');
+  s.append(p);
+  return s;
+}
+
 appliquerTheme();
 const SERVICE = 'Relay';
 const api = new Api({ surDeconnexion: () => location.reload() });
-const etat = await porte({ api, service: SERVICE, sousTitre: 'un nom pour chaque service' });
+const etat = await porte({ api, service: SERVICE, marque: logo(20), sousTitre: 'un nom pour chaque service' });
 const moi = etat.session.compte;
 const admin = moi.role === 'admin';
 
@@ -50,7 +65,7 @@ const railEtat = h('b', { text: '—' });
 const railBar = h('i');
 const app = h('div', { class: 'app' },
   h('nav', { class: 'rail', 'aria-label': 'Navigation' },
-    h('div', { class: 'mark' }, h('div', { class: 'g' }, icone('globe', 15)), h('b', { text: SERVICE }), h('i', { class: 'pulse' })),
+    h('div', { class: 'mark' }, h('div', { class: 'g' }, logo(16)), h('b', { text: SERVICE }), h('i', { class: 'pulse' })),
     groupe('Connexions', ['routes', 'services']),
     groupe('Système', ['reglages', 'securite', 'comptes']),
     h('div', { class: 'railcard' },
