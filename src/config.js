@@ -3,7 +3,7 @@
 // invalide arrête le processus avec la liste complète des erreurs.
 import { lireConfig } from '../socle/src/index.js';
 
-export const VERSION = '2.3.4';
+export const VERSION = '2.4.0';
 
 export const SPEC_RELAY = {
     port: { env: 'PORT', type: 'entier', min: 0, max: 65535, defaut: 8095 },
