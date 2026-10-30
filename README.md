@@ -1,3 +1,12 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="medias/logo-sombre.svg">
+    <img src="medias/logo-clair.svg" alt="Relay" height="56">
+  </picture>
+</p>
+
+<p align="center"><img src="medias/affiche.png" alt="Affiche de Relay" width="100%"></p>
+
 # Relay
 
 Le relais auto-hébergé : un nom par service, servi en HTTPS ou par un tunnel
@@ -17,6 +26,22 @@ Trois conteneurs :
   `/etc/resolver/home.arpa` contenant `nameserver <IP de la machine>` suffit.
 - **relay** — les routes, l'interface et l'API. Node sans dépendance, sur le
   socle commun (comptes, clés d'accès, TOTP, journal, coffre).
+
+## Aperçu
+
+| <img src="medias/capture-1.png" alt="Les routes et leur santé"> |
+|:--:|
+| Les routes et leur santé |
+
+| <img src="medias/capture-2.png" alt="Les services raccordés"> |
+|:--:|
+| Les services raccordés |
+
+| <img src="medias/capture-3.png" alt="Réglages : domaines, Cloudflare, Telegram"> |
+|:--:|
+| Réglages : domaines, Cloudflare, Telegram |
+
+Quatre gammes d’interface au choix — SOMA, Console, Exploitation, Lavande — en clair ou en sombre, de 360 à 1920 px de large.
 
 ## Modes d'une route
 
@@ -97,6 +122,33 @@ sienne du coffre du Hub.
 Hub, ou `secrets/socle_cle_ancienne`), une neuve (`openssl rand -base64 32`)
 dans `SOCLE_CLE`, puis redémarrer : Relay rescelle chaque secret TOTP et chaque
 jeton de ses réglages. Vider ensuite l'ancienne et redémarrer.
+
+## Première configuration et mises à jour
+
+Au premier démarrage, ouvre l’interface : tu crées le compte administrateur avec
+le jeton d’installation (affiché dans les journaux du conteneur, ou transmis par
+le Hub), tu inscris tes facteurs de connexion, puis l’**assistant de
+configuration** passe les réglages de Relay groupe par groupe. Il est
+obligatoire : Relay reste fermé tant qu’il n’est pas terminé. Chaque valeur
+proposée convient pour commencer.
+
+<p align="center"><img src="medias/assistant.png" alt="Assistant de configuration" width="70%"></p>
+
+Réglages demandés : adresse de cette machine sur le réseau, adresse pour les certificats ; plus ceux de
+tous les services (adresse publique, relais de confiance, gamme de
+l’interface, contact de sécurité, courriels d’alerte).
+
+Après une mise à jour qui apporte un réglage nouveau, l’assistant revient au
+passage suivant d’un administrateur et ne demande **que ce réglage-là**. Une
+mise à jour sans réglage nouveau ne demande rien : une fenêtre « Quoi de neuf »
+résume ce qu’elle apporte, une fois par compte, et se ferme d’un clic
+(`nouveautes.json`).
+
+Tout reste modifiable dans **Comptes → Réglages du service**. Une variable
+posée dans l’environnement l’emporte toujours et n’est pas demandée. Relay
+redémarre seul pour appliquer un changement (le processus du conteneur le
+supervise). Les valeurs vivent dans `reglages.json`, dans le volume de
+données ; les secrets y sont scellés par la clé maîtresse.
 
 ## Sauvegardes
 
