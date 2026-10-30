@@ -1,6 +1,6 @@
 {
   "name": "relay",
-  "version": "2.3.3",
+  "version": "2.3.4",
   "description": "Le relais auto-hébergé : un nom par service, HTTPS, tunnel Cloudflare — piloté depuis le Hub, sur le socle commun.",
   "type": "module",
   "private": true,
