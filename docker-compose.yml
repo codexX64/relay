@@ -8,7 +8,7 @@ name: relay
 services:
   caddy:
     build: { context: ., target: caddy }
-    image: ghcr.io/codexx64/relay-caddy:2.3.2
+    image: ghcr.io/codexx64/relay-caddy:2.3.3
     container_name: relay-caddy
     restart: unless-stopped
     ports: ["80:80", "443:443", "443:443/udp"]
@@ -29,7 +29,7 @@ services:
 
   dns:
     build: { context: ., target: dns }
-    image: ghcr.io/codexx64/relay-dns:2.3.2
+    image: ghcr.io/codexx64/relay-dns:2.3.3
     container_name: relay-dns
     restart: unless-stopped
     command: ["--address=/${RELAY_ZONE:-home.arpa}/${RELAY_IP:?RELAY_IP est requis}"]
@@ -50,7 +50,7 @@ services:
 
   relay:
     build: { context: ., target: relay }
-    image: ghcr.io/codexx64/relay:2.3.2
+    image: ghcr.io/codexx64/relay:2.3.3
     container_name: relay
     restart: unless-stopped
     depends_on: [caddy]
