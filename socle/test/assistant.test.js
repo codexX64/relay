@@ -189,3 +189,28 @@ test('rotation de la clé maîtresse : les secrets des réglages passent sous la
 test('déclaration fautive : une variable inconnue arrête le démarrage', () => {
   assert.throws(() => new Assistant({ dossier: nouveauDossier(), env: {}, liste: [{ env: 'INCONNUE', libelle: 'x' }], specs: [SPEC] }), /INCONNUE/);
 });
+
+test('nouveautés : une fois par compte et par version, rien sur une installation neuve', async () => {
+  const { Nouveautes, comparerVersions } = await import('../src/nouveautes.js');
+  assert.equal(comparerVersions('2.10.0', '2.9.3'), 1);
+  assert.equal(comparerVersions('2.4.0-rc.1', '2.4.0'), -1);
+  const liste = [{ version: '1.2.0', date: '2026-10-30', points: ['Deux'] }, { version: '1.1.0', points: ['Un'] }, { version: '1.3.0', points: ['Futur'] }];
+  const dossier = nouveauDossier();
+  let s = await monterBanc({ dossier, version: '1.1.0', nouveautes: liste });
+  const admin = s.client();
+  await adminComplet(admin, { jeton: s.jeton, maintenant: () => s.horloge.t });
+  assert.equal((await admin.etat()).nouveautes, undefined, 'compte neuf : rien à montrer');
+  await s.fermer();
+  s = await monterBanc({ dossier, version: '1.2.0', nouveautes: liste });
+  try {
+    const c = s.client(); c.cookies = admin.cookies;
+    const e = await c.etat();
+    assert.deepEqual(e.nouveautes, { version: '1.2.0', depuis: '1.1.0', versions: [{ version: '1.2.0', date: '2026-10-30', points: ['Deux'] }] });
+    assert.equal((await c.post('/api/compte/nouveautes/vues')).status, 200);
+    assert.equal((await c.etat()).nouveautes, undefined);
+  } finally { await s.fermer(); }
+  // Compte d'avant la fonction (aucune trace, créé il y a longtemps) : voit la version en cours.
+  const n = new Nouveautes({ db: { prepare: () => ({ get: () => undefined, run: () => {} }) }, version: '1.2.0', liste });
+  assert.equal(n.pour('x', { cree: 0, maintenant: Date.now() }).versions[0].version, '1.2.0');
+  assert.equal(n.pour('x', { cree: Date.now() - 1000, maintenant: Date.now() }), null);
+});

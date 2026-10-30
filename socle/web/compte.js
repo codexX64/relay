@@ -363,6 +363,18 @@ export function formulaireReglages(reglages) {
   };
 }
 
+// « Quoi de neuf » : une fois par version, fermée d'un geste (lue ou non).
+const dateCourte = d => { try { return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(d)); } catch { return ''; } };
+export async function montrerNouveautes(api, n, service) {
+  const blocs = n.versions.map((v, i) => h('section', { class: 'nouveaute' + (i ? ' ancienne' : '') },
+    n.versions.length > 1 || v.date ? h('h4', {}, h('span', { text: v.version }), v.date ? h('small', { text: dateCourte(v.date) }) : null) : null,
+    h('ul', {}, v.points.map(p => h('li', { text: p })))));
+  await dialogue({ titre: `Quoi de neuf dans ${service} ${n.version}`, texte: n.versions.length > 1 ? `Depuis ta dernière visite (${n.depuis}).` : null,
+    contenu: [h('div', { class: 'nouveautes' }, blocs)],
+    boutons: [{ texte: 'Passer', classe: 'flat', valeur: false }, { texte: 'Compris', classe: 'solid', valeur: true }] });
+  await api.post('/api/compte/nouveautes/vues').catch(() => { /* reviendra à la prochaine connexion */ });
+}
+
 // Attend que le service relancé réponde de nouveau (sessions conservées).
 async function attendreRelance(api) {
   await new Promise(r => setTimeout(r, 1200));
@@ -422,6 +434,8 @@ export function porte({ api, service, marque = null, sousTitre = '' }) {
       if (e.assistant?.doit) return e.session.compte.role === 'admin' ? assistant(e) : attenteAssistant(e);
       racine.remove();
       resolve(e);
+      // Après une mise à jour : ce qu'elle apporte, par-dessus l'interface montée.
+      if (e.nouveautes) setTimeout(() => montrerNouveautes(api, e.nouveautes, service), 700);
     }
 
     // Assistant de configuration, obligatoire : à la première installation

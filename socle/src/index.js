@@ -14,6 +14,7 @@ import { notificateur } from './notifications.js';
 import { Vigie } from './vigie.js';
 import { Assistant, REGLAGES_SOCLE } from './assistant.js';
 import { redemarreur } from './superviseur.js';
+import { Nouveautes } from './nouveautes.js';
 
 export * from './http.js';
 export * from './outils.js';
@@ -28,8 +29,9 @@ export { Postier } from './courriel.js';
 export { envelopper, requeteCourante } from './requete.js';
 export { sauvegarder, dechiffrer } from './sauvegarde.js';
 export { Frappes, FRAPPE_MAX } from './frappe.js';
-export { appliquerReglages, Assistant, REGLAGES_SOCLE } from './assistant.js';
+export { appliquerReglages, etendreEnv, Assistant, REGLAGES_SOCLE } from './assistant.js';
 export { superviser, redemarreur } from './superviseur.js';
+export { Nouveautes, comparerVersions, lireNouveautes } from './nouveautes.js';
 
 const NIVEAU = { type: 'choix', parmi: ['desactive', 'facultatif', 'requis', 'requis_admin'] };
 
@@ -94,7 +96,9 @@ function controlerEnsemble(cfg) {
 // assistant : { reglages, spec, version, controler } — les réglages que le
 // service fait poser par son assistant de configuration (env passé d'abord par
 // appliquerReglages), la configuration qui les valide, sa version.
-export async function demarrerSocle({ service, db, dossier, env = process.env, log = console, notifier = null, maintenant, migrer = null, assistant = null }) {
+// version, nouveautes : la version du service et son nouveautes.json, pour la
+// fenêtre « Quoi de neuf » après une mise à jour.
+export async function demarrerSocle({ service, db, dossier, env = process.env, log = console, notifier = null, maintenant, migrer = null, assistant = null, version = null, nouveautes = null }) {
   const cfg = lireConfig(SPEC_SOCLE, env);
   controlerEnsemble(cfg);
   reglerArgon({ m: cfg.argonM, t: cfg.argonT, p: cfg.argonP, poivre: cfg.poivre, poivreAncien: cfg.poivreAncien });
@@ -124,6 +128,7 @@ export async function demarrerSocle({ service, db, dossier, env = process.env, l
     courriel: postier ? { postier } : null, urlPublique: cfg.urlPublique, contactSecurite: cfg.contactSecurite || service.contactSecurite || null,
     jetonAdminHub: cfg.jetonAdminHub || null,
   });
+  if (nouveautes) portail.nouveautes = new Nouveautes({ db, version: version || assistant?.version, liste: nouveautes });
   if (assistant) {
     portail.assistant = new Assistant({
       dossier, env, version: assistant.version || null, journal,

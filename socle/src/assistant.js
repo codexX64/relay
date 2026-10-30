@@ -114,16 +114,28 @@ export function appliquerReglages({ dossier, env = process.env, enPlace = false 
   return cible;
 }
 
+// Un environnement dérivé (variables ajoutées par le service lui-même, qui
+// comptent comme posées dans l'environnement) garde le lien avec son origine.
+export function etendreEnv(env, ajouts) {
+  const o = ORIGINES.get(env);
+  const neuf = { ...env, ...ajouts };
+  if (o) ORIGINES.set(neuf, { ...o, reel: { ...o.reel, ...ajouts } });
+  return neuf;
+}
+
 // Ce qui vient de l'environnement réel, pour un environnement passé par
 // appliquerReglages (sinon, tout ce qu'il contient).
 export function origineDe(env) { return ORIGINES.get(env) || { reel: env, dossier: null }; }
+
+// Un secret : de type secret, ou déclaré comme tel par le service (clé au format contrôlé).
+const estSecret = r => !!r && (r.spec.type === 'secret' || r.secret === true);
 
 const defautTexte = s => s.defaut === undefined || s.defaut === null ? '' : Array.isArray(s.defaut) ? s.defaut.join(',') : String(s.defaut);
 
 const TYPES_TEXTE = new Set(['chaine', 'url', 'liste', 'secret']);
 
 export class Assistant {
-  // liste : [{ env, libelle, aide, groupe, depuis, requis, avance, exemple, noms }]
+  // liste : [{ env, libelle, aide, groupe, depuis, requis, avance, exemple, noms, secret }]
   // specs : objets de lireConfig (SPEC_SOCLE et celui du service), pour le type
   // et la validation de chaque variable. controler(env) : contrôles d'ensemble.
   constructor({ dossier, env, liste, specs, version = null, controler = null, journal = null, redemarrer = null }) {
@@ -177,7 +189,7 @@ export class Assistant {
     return {
       premiere: !etat.fini, version: this.version, redemarrage: this.redemarrageRequis,
       reglages: this.liste.map(r => {
-        const s = r.spec, secret = s.type === 'secret';
+        const s = r.spec, secret = estSecret(r);
         const source = this.duMilieu(r.env) ? 'environnement' : Object.hasOwn(etat.valeurs, r.env) ? 'assistant' : 'defaut';
         // Ce qui est enregistré, même pas encore appliqué (redémarrage à venir).
         const actuel = source === 'environnement' ? brut(this.reel, r.env) : source === 'assistant' ? etat.valeurs[r.env]?.clair : undefined;
@@ -225,7 +237,7 @@ export class Assistant {
       candidat[nom] = t;
     }
     for (const r of this.liste) {
-      if (r.requis && !this.duMilieu(r.env) && !candidat[r.env] && !erreurs[r.env]) erreurs[r.env] = 'Obligatoire.';
+      if (r.requis && !this.duMilieu(r.env) && !candidat[r.env] && defautTexte(r.spec) === '' && !erreurs[r.env]) erreurs[r.env] = 'Obligatoire.';
     }
     if (!Object.keys(erreurs).length) {
       // La configuration complète doit encore se lire, réglages croisés compris.
@@ -239,7 +251,7 @@ export class Assistant {
     let coffre = null;
     const avant = this.claires(etat.valeurs);
     for (const [nom, v] of Object.entries(nouvelles)) {
-      if (v?.clair !== undefined && parEnv.get(nom)?.spec.type === 'secret') {
+      if (v?.clair !== undefined && estSecret(parEnv.get(nom))) {
         coffre ??= coffreDe(this.dossier, this.reel);
         nouvelles[nom] = { scelle: coffre.scelle(USAGE, v.clair, nom) };
       }

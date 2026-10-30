@@ -152,6 +152,7 @@ export class Portail {
       // Installé par le Hub : le premier compte se crée depuis le Hub.
       ...(this.jetonAdminHub && !c.estInstalle() ? { parHub: true } : {}),
       ...(this.assistant && s?.niveau === 'complet' && this.assistant.resume() ? { assistant: this.assistant.resume() } : {}),
+      ...(this.nouveautes && s?.niveau === 'complet' ? (n => n ? { nouveautes: n } : {})(this.nouveautes.pour(s.compte, { cree: s.compteLigne.cree, maintenant: c.maintenant() })) : {}),
       session: s ? {
         niveau: s.niveau, csrf: s.csrf, facteursUtilises: s.facteurs,
         compte: s.niveau === 'partiel' ? { identifiant: s.compteLigne.identifiant } : c.publicDe(s.compteLigne, ctx.cleIci),
@@ -200,6 +201,16 @@ export class Portail {
 
     // --- publiques ---
     if (m === 'GET' && p === '/api/compte/etat') return this.etat(ctx);
+
+    // Nouveautés lues (ou passées) : la fenêtre ne revient plus pour cette version.
+    if (m === 'POST' && p === '/api/compte/nouveautes/vues' && this.nouveautes) {
+      const s = ctx.session;
+      if (!s || s.niveau !== 'complet') throw new ErreurHttp(401, 'Connexion requise.');
+      this.controlerOrigine(ctx);
+      this.controlerCsrf(ctx);
+      this.nouveautes.marquer(s.compte);
+      return { ok: true };
+    }
 
     // --- assistant de configuration : administrateurs seulement ---
     if (p === '/api/compte/reglages' && this.assistant) {
