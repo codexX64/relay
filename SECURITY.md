@@ -516,3 +516,5 @@ Sondage exploratoire du 2026-10-20, rejoué à chaque génération de ce fichier
 | P32 | jetons inventés en rafale | douze `GET /api/etat`, jetons faux | bloqué (429) | bloqué (429) |
 
 Suivi du 2026-10-30 (2.3.3) : nouveau logo. L'icône de l'onglet (`web/icone.svg`) et la marque de la barre et de l'écran de connexion (`web/app.js:14`, tracé posé par createElementNS, aucun balisage injecté) prennent le nouveau logo. Les fichiers fournis portaient un manifeste C2PA (métadonnées d'origine) : retiré, comme toute métadonnée, avant d'entrer dans le dépôt (REQ-ANON). Aucun contrôle ne change de statut. Essais : 104 du service et du socle. Parcours du navigateur : 63 écrans × largeurs, 0 défaut, 0 erreur de console.
+
+Suivi du 2026-10-30 (2.3.4) : logos. Le logo complet (marque et nom) et la marque seule sont tracés dans la page par createElementNS, en couleur du texte (`web/app.js:15`) ; aucun balisage injecté, aucune donnée. L'icône de l'onglet reprend le fichier favicon du dossier Logo, nettoyé (ni métadonnées, ni commentaire). Aucun contrôle ne change de statut. Essais et parcours du navigateur repassés.
