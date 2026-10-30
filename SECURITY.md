@@ -514,3 +514,5 @@ Sondage exploratoire du 2026-10-20, rejoué à chaque génération de ce fichier
 | P30 | secret au repos | base relue en brut : jeton Telegram, jetons de services | scellé, empreintes | scellé, empreintes |
 | P31 | erreur interne détaillée | `PATCH /api/routes/AAAAAAAAAAAA` (Hub) | 404 sans pile | 404 sans pile |
 | P32 | jetons inventés en rafale | douze `GET /api/etat`, jetons faux | bloqué (429) | bloqué (429) |
+
+Suivi du 2026-10-30 (2.3.3) : nouveau logo. L'icône de l'onglet (`web/icone.svg`) et la marque de la barre et de l'écran de connexion (`web/app.js:14`, tracé posé par createElementNS, aucun balisage injecté) prennent le nouveau logo. Les fichiers fournis portaient un manifeste C2PA (métadonnées d'origine) : retiré, comme toute métadonnée, avant d'entrer dans le dépôt (REQ-ANON). Aucun contrôle ne change de statut. Essais : 104 du service et du socle. Parcours du navigateur : 63 écrans × largeurs, 0 défaut, 0 erreur de console.
