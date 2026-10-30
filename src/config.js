@@ -5,8 +5,7 @@ import { lireConfig } from '../socle/src/index.js';
 
 export const VERSION = '2.3.4';
 
-export function lireConfigRelay(env = process.env) {
-  return lireConfig({
+export const SPEC_RELAY = {
     port: { env: 'PORT', type: 'entier', min: 0, max: 65535, defaut: 8095 },
     hote: { env: 'HOTE', type: 'chaine', defaut: '0.0.0.0' },
     donnees: { env: 'DATA_DIR', type: 'chaine', defaut: '/data' },
@@ -30,5 +29,18 @@ export function lireConfigRelay(env = process.env) {
     // API Cloudflare et Telegram (remplacées dans les essais).
     cfApi: { env: 'RELAY_CF_API', type: 'url', defaut: 'https://api.cloudflare.com/client/v4' },
     tgApi: { env: 'RELAY_TG_API', type: 'url', defaut: 'https://api.telegram.org' },
-  }, env);
+};
+
+// Ce que l'assistant de configuration demande (première installation, puis
+// seulement les réglages nouveaux d'une mise à jour). depuis : la version qui
+// a ajouté le réglage.
+export const REGLAGES_RELAY = [
+  { env: 'RELAY_IP', groupe: 'Relay', libelle: 'Adresse de cette machine sur le réseau', exemple: '192.0.2.10', depuis: '2.4.0',
+    aide: 'L’adresse IPv4 locale de la machine qui fait tourner Relay : les noms locaux (home.arpa) y pointent. Vide : pas de noms locaux.' },
+  { env: 'ACME_EMAIL', groupe: 'Relay', libelle: 'Adresse pour les certificats', exemple: 'certificats@exemple.org', depuis: '2.4.0',
+    aide: 'Donnée à Let’s Encrypt pour les certificats des domaines publics (avis d’expiration). Modifiable ensuite dans les réglages de Relay.' },
+];
+
+export function lireConfigRelay(env = process.env) {
+  return lireConfig(SPEC_RELAY, env);
 }

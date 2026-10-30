@@ -3,7 +3,7 @@
 // bot Telegram, et serveur HTTP de l'interface et de l'API.
 import http from 'node:http';
 import path from 'node:path';
-import { lireConfigRelay, VERSION } from './config.js';
+import { lireConfigRelay, SPEC_RELAY, REGLAGES_RELAY, VERSION } from './config.js';
 import { ouvrirBase, Magasin } from './base.js';
 import { Caddy } from './caddy.js';
 import { Cloudflare } from './cloudflare.js';
@@ -12,7 +12,7 @@ import { Telegram } from './telegram.js';
 import { reprendre } from './reprise.js';
 import { creerApi } from './api.js';
 import {
-  Debit, ErreurHttp, demarrerSocle, entetesSecurite, envelopper, nonceCsp, politiqueContenu,
+  Debit, ErreurHttp, appliquerReglages, demarrerSocle, superviser, entetesSecurite, envelopper, nonceCsp, politiqueContenu,
   repondreErreur, repondreJson, servirFichier,
 } from '../socle/src/index.js';
 
@@ -21,10 +21,15 @@ const CONSOLE = { info: (...a) => console.log(...a), warn: (...a) => console.war
 const CONTACT_SECURITE = 'https://github.com/CodexX64/relay/security/advisories/new';
 const ICONE = { panne: '🔴', reprise: '🟢', caddy: '⚠️' };
 
-export async function demarrer(env = process.env, { log = CONSOLE } = {}) {
+export async function demarrer(envBrut = process.env, { log = CONSOLE } = {}) {
+  // Les réglages posés par l'assistant complètent l'environnement (qui garde la main).
+  const env = appliquerReglages({ dossier: envBrut.DATA_DIR || SPEC_RELAY.donnees.defaut, env: envBrut });
   const cfg = lireConfigRelay(env);
   const db = ouvrirBase(cfg.donnees);
-  const socle = await demarrerSocle({ service: { id: 'relay', nom: 'Relay', contactSecurite: CONTACT_SECURITE }, db, dossier: cfg.donnees, env, log });
+  const socle = await demarrerSocle({
+    service: { id: 'relay', nom: 'Relay', contactSecurite: CONTACT_SECURITE }, db, dossier: cfg.donnees, env, log,
+    assistant: { reglages: REGLAGES_RELAY, spec: SPEC_RELAY, version: VERSION },
+  });
   const magasin = new Magasin(db, { coffre: socle.coffre });
   let bilan;
   try { bilan = magasin.resceller(); } catch (e) { socle.arreter(); db.close(); throw e; }
@@ -99,7 +104,9 @@ export async function demarrer(env = process.env, { log = CONSOLE } = {}) {
   };
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename)) {
+// Le processus du conteneur supervise le service et le relance quand
+// l'assistant a posé de nouveaux réglages.
+if (process.argv[1] && path.resolve(process.argv[1]) === path.resolve(import.meta.filename) && !superviser()) {
   process.umask(0o077);
   const r = await demarrer().catch(e => { console.error(e.message); process.exit(1); });
   const fin = async sig => { console.log(`${sig} reçu, arrêt propre`); await r.arreter(); process.exit(0); };
